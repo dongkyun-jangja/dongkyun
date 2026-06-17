@@ -1,0 +1,3564 @@
+import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
+import * as ImagePicker from 'expo-image-picker';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Alert,
+  Animated,
+  Dimensions,
+  Image,
+  Keyboard,
+  Linking,
+  Modal,
+  Pressable,
+  ScrollView,
+  Share,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+
+const { width: SCREEN_W } = Dimensions.get('window');
+const THUMB_SIZE = Math.floor((SCREEN_W - 88) / 3);
+
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBadge } from '../../../src/components/StatusBadge';
+import { colors } from '../../../src/constants/colors';
+import { useDelivery } from '../../../src/context/DeliveryContext';
+import { useKakaoChat } from '../../../src/hooks/useKakaoChat';
+import { DeliveryItem, PickupFailKind, PickupItem } from '../../../src/types';
+
+const PICKUP_FAIL_KIND_OPTIONS: { kind: PickupFailKind; label: string; hint: string }[] = [
+  { kind: '매장에주류없음', label: '매장에 주류 없음', hint: '회수 대상 상품이 매장에 존재하지 않음' },
+  { kind: '매장부재', label: '매장 부재', hint: '점주/직원 부재로 회수 불가' },
+  { kind: '중복오기입', label: '중복/오기입', hint: '회수 요청 자체가 중복 또는 오기입' },
+  { kind: '기타', label: '기타', hint: '아래 사유를 직접 적어주세요' },
+];
+
+// 상품 이미지 확대 모달
+function ImageZoomModal({
+  uri,
+  visible,
+  onClose,
+}: {
+  uri: string;
+  visible: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <Image
+          source={{ uri }}
+          style={styles.modalImage}
+          resizeMode="contain"
+        />
+        <Pressable style={styles.modalCloseBtn} onPress={onClose} hitSlop={12}>
+          <View style={styles.modalCloseCircle}>
+            <Ionicons name="close" size={20} color={colors.white} />
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// 상품 행 컴포넌트
+const ItemRow = React.memo(function ItemRow({
+  item,
+  isLast,
+  onUpdateQty,
+  onUpdateBags,
+}: {
+  item: DeliveryItem;
+  isLast: boolean;
+  onUpdateQty?: (actualQty: number | null) => void;
+  onUpdateBags?: (actualBags: number | null) => void;
+}) {
+  const requestedQty = item.quantity;
+  const requestedBoxes = Math.floor(requestedQty / item.boxUnit);
+  const hasMismatch = item.actualQuantity != null && item.actualQuantity !== requestedQty;
+  const actualBoxes = hasMismatch ? Math.floor(item.actualQuantity! / item.boxUnit) : null;
+  // 쇼핑백 불일치
+  const requestedBags = item.bags ?? 0;
+  const hasBagMismatch = item.actualBags != null && item.actualBags !== requestedBags;
+  const actualBags = item.actualBags ?? requestedBags;
+
+  const [zoomVisible, setZoomVisible] = useState(false);
+  const [qtyEditing, setQtyEditing] = useState(false);
+  const [qtyDraft, setQtyDraft] = useState('');
+  const qtyInputRef = useRef<TextInput>(null);
+  const [bagsEditing, setBagsEditing] = useState(false);
+  const [bagsDraft, setBagsDraft] = useState('');
+  const bagsInputRef = useRef<TextInput>(null);
+
+  // imageUrl이 없으면 상품 코드 기반 플레이스홀더
+  const imageUri = item.imageUrl ?? `https://picsum.photos/seed/${item.code}/120/120`;
+
+  const handleQtyEditStart = useCallback(() => {
+    if (!onUpdateQty) return;
+    setQtyDraft(String(item.actualQuantity ?? requestedQty));
+    setQtyEditing(true);
+    setTimeout(() => qtyInputRef.current?.focus(), 80);
+  }, [onUpdateQty, item.actualQuantity, requestedQty]);
+
+  const handleQtyConfirm = useCallback(() => {
+    if (!onUpdateQty) return;
+    const parsed = parseInt(qtyDraft, 10);
+    if (!isNaN(parsed) && parsed >= 0) {
+      onUpdateQty(parsed === requestedQty ? null : parsed);
+    }
+    setQtyEditing(false);
+    Keyboard.dismiss();
+  }, [onUpdateQty, qtyDraft, requestedQty]);
+
+  const handleQtyReset = useCallback(() => {
+    onUpdateQty?.(null);
+    setQtyEditing(false);
+  }, [onUpdateQty]);
+
+  // 쇼핑백 편집
+  const handleBagsEditStart = useCallback(() => {
+    if (!onUpdateBags) return;
+    setBagsDraft(String(item.actualBags ?? requestedBags));
+    setBagsEditing(true);
+    setTimeout(() => bagsInputRef.current?.focus(), 80);
+  }, [onUpdateBags, item.actualBags, requestedBags]);
+
+  const handleBagsConfirm = useCallback(() => {
+    if (!onUpdateBags) return;
+    const parsed = parseInt(bagsDraft, 10);
+    if (!isNaN(parsed) && parsed >= 0 && parsed <= requestedBags) {
+      onUpdateBags(parsed === requestedBags ? null : parsed);
+    }
+    setBagsEditing(false);
+    Keyboard.dismiss();
+  }, [onUpdateBags, bagsDraft, requestedBags]);
+
+  const handleBagsReset = useCallback(() => {
+    onUpdateBags?.(null);
+    setBagsEditing(false);
+  }, [onUpdateBags]);
+
+  return (
+    <View style={[styles.itemRow, !isLast && styles.itemRowBorder]}>
+      {/* 상품 이미지 썸네일 */}
+      <Pressable
+        onPress={() => setZoomVisible(true)}
+        style={({ pressed }) => [styles.itemThumbWrap, pressed && { opacity: 0.8 }]}
+        hitSlop={4}
+      >
+        <Image
+          source={{ uri: imageUri }}
+          style={styles.itemThumb}
+          resizeMode="cover"
+        />
+        <View style={styles.itemThumbZoomIcon}>
+          <Ionicons name="expand-outline" size={10} color={colors.white} />
+        </View>
+      </Pressable>
+
+      <View style={styles.itemLeft}>
+        <View style={styles.itemNameRow}>
+          <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
+          {/* 블랙 배지 — 상품명 바로 아래 인라인 */}
+          {item.isBlack && (
+            <View style={styles.itemBlackBadge}>
+              <Ionicons name="diamond" size={8} color="#EECB4E" />
+              <Text style={styles.itemBlackBadgeText}>블랙</Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.itemMeta}>
+          <Text style={styles.itemCode}>#{item.code}</Text>
+          {requestedBags > 0 && (
+            <View style={[styles.bagChip, hasBagMismatch && styles.bagChipMismatch]}>
+              <Ionicons name="bag-handle" size={11} color={hasBagMismatch ? colors.red : '#C44A00'} />
+              {hasBagMismatch ? (
+                <Text style={styles.bagChipMismatchText}>쇼핑백 {actualBags}/{requestedBags}개</Text>
+              ) : (
+                <Text style={styles.bagChipText}>쇼핑백 {requestedBags}개</Text>
+              )}
+            </View>
+          )}
+        </View>
+        {/* 상품 메모 */}
+        {item.itemNote ? (
+          <View style={styles.itemNoteRow}>
+            <Ionicons name="information-circle" size={12} color={colors.orange} />
+            <Text style={styles.itemNoteText}>{item.itemNote}</Text>
+          </View>
+        ) : null}
+        {/* 수량 불일치 인라인 편집 */}
+        {onUpdateQty && (
+          qtyEditing ? (
+            <View style={styles.qtyEditRow}>
+              <Text style={styles.qtyEditLabel}>실제 수량</Text>
+              <TextInput
+                ref={qtyInputRef}
+                style={styles.qtyEditInput}
+                value={qtyDraft}
+                onChangeText={setQtyDraft}
+                keyboardType="number-pad"
+                selectTextOnFocus
+                onSubmitEditing={handleQtyConfirm}
+              />
+              <Text style={styles.qtyEditUnit}>개</Text>
+              <Pressable style={styles.qtyConfirmBtn} onPress={handleQtyConfirm}>
+                <Text style={styles.qtyConfirmText}>확인</Text>
+              </Pressable>
+              <Pressable style={styles.qtyCancelBtn} onPress={() => setQtyEditing(false)} hitSlop={8}>
+                <Ionicons name="close" size={14} color={colors.gray} />
+              </Pressable>
+            </View>
+          ) : hasMismatch ? (
+            <View style={styles.qtyMismatchRow}>
+              <Ionicons name="alert-circle" size={13} color={colors.red} />
+              <Text style={styles.qtyMismatchText}>실제 {item.actualQuantity}개</Text>
+              <Pressable onPress={handleQtyEditStart} hitSlop={8}>
+                <Text style={styles.qtyMismatchEdit}>수정</Text>
+              </Pressable>
+              <Pressable onPress={handleQtyReset} hitSlop={8}>
+                <Text style={styles.qtyMismatchReset}>초기화</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable style={styles.qtyMismatchAdd} onPress={handleQtyEditStart} hitSlop={4}>
+              <Ionicons name="swap-horizontal-outline" size={11} color={colors.gray} />
+              <Text style={styles.qtyMismatchAddText}>수량 불일치 기록</Text>
+            </Pressable>
+          )
+        )}
+        {/* 쇼핑백 부족 인라인 편집 — bags>0 + onUpdateBags 있을 때만 */}
+        {onUpdateBags && requestedBags > 0 && (
+          bagsEditing ? (
+            <View style={styles.qtyEditRow}>
+              <Text style={styles.qtyEditLabel}>실제 쇼핑백</Text>
+              <TextInput
+                ref={bagsInputRef}
+                style={styles.qtyEditInput}
+                value={bagsDraft}
+                onChangeText={setBagsDraft}
+                keyboardType="number-pad"
+                selectTextOnFocus
+                onSubmitEditing={handleBagsConfirm}
+                maxLength={2}
+              />
+              <Text style={styles.qtyEditUnit}>/{requestedBags}개</Text>
+              <Pressable style={styles.qtyConfirmBtn} onPress={handleBagsConfirm}>
+                <Text style={styles.qtyConfirmText}>확인</Text>
+              </Pressable>
+              <Pressable style={styles.qtyCancelBtn} onPress={() => setBagsEditing(false)} hitSlop={8}>
+                <Ionicons name="close" size={14} color={colors.gray} />
+              </Pressable>
+            </View>
+          ) : hasBagMismatch ? (
+            <View style={styles.qtyMismatchRow}>
+              <Ionicons name="bag-handle" size={13} color={colors.red} />
+              <Text style={styles.qtyMismatchText}>쇼핑백 {actualBags}/{requestedBags}개</Text>
+              <Pressable onPress={handleBagsEditStart} hitSlop={8}>
+                <Text style={styles.qtyMismatchEdit}>수정</Text>
+              </Pressable>
+              <Pressable onPress={handleBagsReset} hitSlop={8}>
+                <Text style={styles.qtyMismatchReset}>초기화</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable style={styles.qtyMismatchAdd} onPress={handleBagsEditStart} hitSlop={4}>
+              <Ionicons name="bag-handle-outline" size={11} color={colors.gray} />
+              <Text style={styles.qtyMismatchAddText}>쇼핑백 부족 기록</Text>
+            </Pressable>
+          )
+        )}
+      </View>
+
+      {/* 오른쪽: 수량 표시 */}
+      <View style={styles.itemRight}>
+        {hasMismatch ? (
+          <>
+            <Text style={[styles.itemQty, { color: colors.red }]}>{actualBoxes}박스</Text>
+            <Text style={[styles.itemQtySub, { textDecorationLine: 'line-through' }]}>{requestedBoxes}박스</Text>
+            <Text style={[styles.itemQtySub, { color: colors.red }]}>{item.actualQuantity}개</Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.itemQty}>{requestedBoxes}박스</Text>
+            <Text style={styles.itemQtySub}>{requestedQty}개</Text>
+          </>
+        )}
+      </View>
+
+      <ImageZoomModal
+        uri={imageUri}
+        visible={zoomVisible}
+        onClose={() => setZoomVisible(false)}
+      />
+    </View>
+  );
+});
+
+// ─── 회수 상품 행 컴포넌트 ─────────────────────────────────────────────
+const PickupItemRow = React.memo(function PickupItemRow({
+  item,
+  isLast,
+  onUpdateQty,
+}: {
+  item: PickupItem;
+  isLast: boolean;
+  onUpdateQty?: (actualQty: number | null) => void;
+}) {
+  const requestedQty = item.quantity;
+  const requestedBoxes = item.boxUnit > 0 ? Math.floor(requestedQty / item.boxUnit) : 0;
+  const hasMismatch = item.actualQuantity != null && item.actualQuantity !== requestedQty;
+  const actualQty = item.actualQuantity ?? requestedQty;
+  const actualBoxes = item.boxUnit > 0 ? Math.floor(actualQty / item.boxUnit) : 0;
+
+  const [qtyEditing, setQtyEditing] = useState(false);
+  const [qtyDraft, setQtyDraft] = useState('');
+  const qtyInputRef = useRef<TextInput>(null);
+
+  const handleQtyEditStart = useCallback(() => {
+    if (!onUpdateQty) return;
+    setQtyDraft(String(item.actualQuantity ?? requestedQty));
+    setQtyEditing(true);
+    setTimeout(() => qtyInputRef.current?.focus(), 80);
+  }, [onUpdateQty, item.actualQuantity, requestedQty]);
+
+  const handleQtyConfirm = useCallback(() => {
+    if (!onUpdateQty) return;
+    const parsed = parseInt(qtyDraft, 10);
+    if (!isNaN(parsed) && parsed >= 0) {
+      onUpdateQty(parsed === requestedQty ? null : parsed);
+    }
+    setQtyEditing(false);
+    Keyboard.dismiss();
+  }, [onUpdateQty, qtyDraft, requestedQty]);
+
+  const handleQtyReset = useCallback(() => {
+    onUpdateQty?.(null);
+    setQtyEditing(false);
+  }, [onUpdateQty]);
+
+  return (
+    <View style={[styles.itemRow, !isLast && styles.itemRowBorder]}>
+      <View style={styles.pickupIconWrap}>
+        <Ionicons name="arrow-undo" size={18} color={colors.blue} />
+      </View>
+
+      <View style={styles.itemLeft}>
+        <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
+        <Text style={styles.itemCode}>#{item.code}</Text>
+        {/* 사유 / 예정조치 / 출고일 칩 — 본사 입력값, 기사는 읽기 전용 */}
+        {(item.reason || item.plannedAction || item.shippedDate) && (
+          <View style={styles.pickupMetaRow}>
+            {item.reason && (
+              <View style={[styles.pickupMetaChip, styles.pickupMetaChipReason]}>
+                <Text style={styles.pickupMetaChipText}>사유 · {item.reason}</Text>
+              </View>
+            )}
+            {item.plannedAction && (
+              <View style={[styles.pickupMetaChip, styles.pickupMetaChipAction]}>
+                <Text style={styles.pickupMetaChipText}>예정 · {item.plannedAction}</Text>
+              </View>
+            )}
+            {item.shippedDate && (
+              <View style={[styles.pickupMetaChip, styles.pickupMetaChipDate]}>
+                <Ionicons name="cube-outline" size={10} color={colors.gray} />
+                <Text style={styles.pickupMetaChipDateText}>출고 {item.shippedDate.slice(5)}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* 수량 불일치 표시 */}
+        {hasMismatch && !qtyEditing && (
+          <View style={styles.qtyMismatchRow}>
+            <Ionicons name="alert-circle" size={12} color={colors.red} />
+            <Text style={styles.qtyMismatchText}>
+              {actualBoxes}박스 ({actualQty}개)
+            </Text>
+            <Text style={[styles.qtyMismatchEdit, { color: colors.blue }]}
+              onPress={handleQtyEditStart}
+            >
+              수정
+            </Text>
+            <Text style={styles.qtyMismatchReset} onPress={handleQtyReset}>
+              · 초기화
+            </Text>
+          </View>
+        )}
+
+        {/* 수량 편집 입력 */}
+        {qtyEditing && (
+          <View style={[styles.qtyEditRow, { borderColor: colors.blue }]}>
+            <Text style={styles.qtyEditLabel}>실제 회수 수량</Text>
+            <TextInput
+              ref={qtyInputRef}
+              style={[styles.qtyEditInput, { borderBottomColor: colors.blue }]}
+              value={qtyDraft}
+              onChangeText={setQtyDraft}
+              keyboardType="number-pad"
+              onSubmitEditing={handleQtyConfirm}
+              selectTextOnFocus
+            />
+            <Text style={styles.qtyEditUnit}>개</Text>
+            <Pressable
+              style={[styles.qtyConfirmBtn, { backgroundColor: colors.blue }]}
+              onPress={handleQtyConfirm}
+            >
+              <Text style={styles.qtyConfirmText}>확인</Text>
+            </Pressable>
+            <Pressable style={styles.qtyCancelBtn} onPress={() => setQtyEditing(false)}>
+              <Ionicons name="close" size={16} color={colors.gray} />
+            </Pressable>
+          </View>
+        )}
+
+        {/* 수량 불일치 기록 버튼 (pending, 불일치 없을 때) */}
+        {onUpdateQty && !hasMismatch && !qtyEditing && (
+          <Pressable style={styles.qtyMismatchAdd} onPress={handleQtyEditStart} hitSlop={8}>
+            <Ionicons name="create-outline" size={12} color={colors.gray} />
+            <Text style={styles.qtyMismatchAddText}>수량 불일치 기록</Text>
+          </Pressable>
+        )}
+      </View>
+
+      <View style={styles.itemQtyWrap}>
+        {hasMismatch ? (
+          <>
+            <Text style={[styles.itemQtySub, { textDecorationLine: 'line-through' }]}>
+              {requestedBoxes}박스
+            </Text>
+            <Text style={[styles.itemQtySub, { textDecorationLine: 'line-through' }]}>
+              {requestedQty}개
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text style={[styles.itemQty, { color: colors.blue }]}>{requestedBoxes}박스</Text>
+            <Text style={styles.itemQtySub}>{requestedQty}개</Text>
+          </>
+        )}
+      </View>
+    </View>
+  );
+});
+
+export default function StoreDetailScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { course, updateStoreStatus, addStorePhoto, removeStorePhoto, updateDriverNote, updateItemQuantity, updateItemBags, updatePickupStatus, updatePickupItemQuantity, updatePickupDriverNote } = useDelivery();
+  const router = useRouter();
+  const { openChat: openKakaoChat } = useKakaoChat();
+  const insets = useSafeAreaInsets();
+
+  // 촬영 후 아직 확정 전 임시 사진 (pending 상태에서만 사용)
+  const [pendingPhotos, setPendingPhotos] = useState<string[]>([
+    'https://picsum.photos/seed/delivery/400/300',
+  ]);
+  // 특이사항 편집 상태
+  const [noteEditing, setNoteEditing] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
+  // 이슈 신고 확인 오버레이 (Alert 대신 Expo Web 호환)
+  const [showIssueConfirm, setShowIssueConfirm] = useState(false);
+  const [issueCopied, setIssueCopied] = useState(false);
+  // 회수 미완료 오버레이
+  const [showPickupFailConfirm, setShowPickupFailConfirm] = useState(false);
+  const [pickupFailDraft, setPickupFailDraft] = useState('');
+  const [pickupFailKindDraft, setPickupFailKindDraft] = useState<PickupFailKind>('매장에주류없음');
+  // 회수 기사 메모 편집
+  const [pickupNoteEditing, setPickupNoteEditing] = useState(false);
+  const [pickupNoteDraft, setPickupNoteDraft] = useState('');
+  // 회수 완료/미완료 취소 popup
+  const [showPickupUndo, setShowPickupUndo] = useState(false);
+  const [pickupUndoReason, setPickupUndoReason] = useState('');
+  // 쇼핑백 확인 체크박스 (previewCard 인라인)
+  const [bagChecked, setBagChecked] = useState(false);
+  // 완료 토스트
+  const [remainingCount, setRemainingCount] = useState(0);
+  const [nextStoreId, setNextStoreId] = useState<string | null>(null);
+  const [nextStoreName, setNextStoreName] = useState<string | null>(null);
+  const [completedOrder, setCompletedOrder] = useState(0); // 방금 완료한 매장의 1-based index
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastKind, setToastKind] = useState<'delivered' | 'pickup-collected' | 'pickup-issue'>('delivered');
+  const toastAnim = useRef(new Animated.Value(0)).current;
+
+  const store = useMemo(
+    () => course.stores.find((s) => s.id === id),
+    [course.stores, id],
+  );
+
+  const handleCall = useCallback(() => {
+    if (!store) return;
+    Linking.openURL(`tel:${store.phone}`);
+  }, [store]);
+
+  const openCamera = useCallback(async (): Promise<string | null> => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(
+        '카메라 권한 필요',
+        '배송 사진을 촬영하려면 카메라 권한이 필요합니다.\n설정 화면에서 권한을 허용해 주세요.',
+        [
+          { text: '취소', style: 'cancel' },
+          { text: '설정 열기', onPress: () => Linking.openSettings() },
+        ],
+      );
+      return null;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      quality: 0.85,
+      allowsEditing: false,
+      exif: false,
+    });
+    if (result.canceled || !result.assets[0]) return null;
+    return result.assets[0].uri;
+  }, []);
+
+  // 1단계: 사진 촬영 → 임시 저장 (아직 완료 처리 안 함)
+  const handleTakePhoto = useCallback(async () => {
+    const uri = await openCamera();
+    if (!uri) return;
+    setPendingPhotos([uri]);
+  }, [openCamera]);
+
+  // 1단계: 사진 추가 (임시, 최대 3장)
+  const handleAddPendingPhoto = useCallback(async () => {
+    if (pendingPhotos.length >= 3) return;
+    const uri = await openCamera();
+    if (!uri) return;
+    setPendingPhotos(prev => [...prev, uri]);
+  }, [openCamera, pendingPhotos.length]);
+
+  // 1단계: 임시 사진 삭제
+  const handleDeletePendingPhoto = useCallback((index: number) => {
+    setPendingPhotos(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  // 2단계: 배송 완료 확정
+  // 공통 — 완료 토스트 + 다음 매장 자동 이동
+  const triggerNextStore = useCallback(
+    (kind: 'delivered' | 'pickup-collected' | 'pickup-issue') => {
+      if (!store) return;
+      const pendingAfter = course.stores
+        .filter((s) => s.status === 'pending' && s.id !== store.id)
+        .sort((a, b) => a.order - b.order);
+      const nextPending = pendingAfter[0] ?? null;
+      const totalCount = course.stores.length;
+      const doneCount = totalCount - pendingAfter.length; // 방금 완료 포함
+
+      setRemainingCount(pendingAfter.length);
+      setNextStoreId(nextPending?.id ?? null);
+      setNextStoreName(nextPending?.name ?? null);
+      setCompletedOrder(doneCount);
+      setToastKind(kind);
+      setToastVisible(true);
+
+      Animated.sequence([
+        Animated.timing(toastAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.delay(2800),
+        Animated.timing(toastAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start(() => {
+        if (nextPending) {
+          router.replace(`/(main)/store/${nextPending.id}` as any);
+        } else {
+          router.replace('/(main)/(tabs)/dashboard');
+        }
+      });
+    },
+    [store, course.stores, toastAnim, router],
+  );
+
+  const handleConfirmDelivery = useCallback(() => {
+    if (!store || pendingPhotos.length === 0) return;
+    updateStoreStatus(store.id, 'delivered', pendingPhotos);
+    setPendingPhotos([]);
+    triggerNextStore('delivered');
+  }, [store, pendingPhotos, updateStoreStatus, triggerNextStore]);
+
+  // 회수 전용 매장에서 회수 완료 시 호출 (triggerNextStore는 store.id를 제외하고 계산하므로 안전)
+  const handlePickupOnlyCollected = useCallback(() => {
+    if (!store) return;
+    updatePickupStatus(store.id, 'collected');
+    triggerNextStore('pickup-collected');
+  }, [store, updatePickupStatus, triggerNextStore]);
+
+  // 회수 전용 매장에서 회수 미완료 처리 시 호출
+  const handlePickupOnlyIssue = useCallback(
+    (failReason: string | undefined, failKind: PickupFailKind) => {
+      if (!store) return;
+      updatePickupStatus(store.id, 'issue', failReason, failKind);
+      triggerNextStore('pickup-issue');
+    },
+    [store, updatePickupStatus, triggerNextStore],
+  );
+
+  const storeTotalBags = store ? store.items.reduce((s, i) => s + (i.bags ?? 0), 0) : 0;
+  const storeActualBags = store
+    ? store.items.reduce((s, i) => s + (i.actualBags ?? (i.bags ?? 0)), 0)
+    : 0;
+  const storeBagShortage = storeTotalBags - storeActualBags;
+  const hasAnyBagMismatch = store
+    ? store.items.some((i) => i.actualBags != null && i.actualBags !== (i.bags ?? 0))
+    : false;
+  // 쇼핑백 일부 부족 기록이 있으면 체크박스 자동 해제 효과
+  // 쇼핑백 있을 때 체크 완료 여부 — 부족 기록이 있어도 "확인 완료"로 간주 (의도적 기록)
+  const bagReady = storeTotalBags === 0 || bagChecked || hasAnyBagMismatch;
+  // 회수 상품 있는 매장은 회수 완료/미완료 처리 끝나야 배송 완료 가능
+  const pickupReady = !store || !store.pickupItems || store.pickupItems.length === 0
+    || store.pickupStatus === 'collected' || store.pickupStatus === 'issue';
+  const canConfirmDelivery = bagReady && pickupReady;
+
+  // 완료 상태에서 추가 사진 촬영
+  const handleAddPhoto = useCallback(async () => {
+    if (!store) return;
+    const uri = await openCamera();
+    if (!uri) return;
+    addStorePhoto(store.id, uri);
+  }, [store, addStorePhoto, openCamera]);
+
+  // 완료된 사진 삭제 (최소 1장 유지)
+  const handleDeletePhoto = useCallback((index: number) => {
+    if (!store) return;
+    const count = store.photoUris?.length ?? 0;
+    if (count <= 1) return;
+    Alert.alert('사진 삭제', '이 사진을 삭제할까요?', [
+      { text: '취소', style: 'cancel' },
+      { text: '삭제', style: 'destructive', onPress: () => removeStorePhoto(store.id, index) },
+    ]);
+  }, [store, removeStorePhoto]);
+
+  const handleReportIssue = useCallback(() => {
+    setShowIssueConfirm(true);
+  }, []);
+
+  // 이슈 메시지 생성
+  const buildIssueMessage = useCallback(() => {
+    if (!store) return '';
+    const now = new Date();
+    const h = now.getHours();
+    const m = now.getMinutes().toString().padStart(2, '0');
+    const ampm = h < 12 ? '오전' : '오후';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    const timeStr = `${ampm} ${h12}:${m}`;
+
+    const itemLines = store.items
+      .map((item) => {
+        const boxes = Math.floor(item.quantity / item.boxUnit);
+        return `• ${item.name} — ${boxes}박스 (${item.quantity}개)`;
+      })
+      .join('\n');
+
+    const noteLine = store.driverNote
+      ? `\n📝 특이사항\n${store.driverNote}`
+      : '';
+
+    const photoLine = pendingPhotos.length > 0
+      ? `\n📷 현장 사진 ${pendingPhotos.length}장 (별도 공유)`
+      : '';
+
+    return [
+      `🚨 [이슈 신고] ${store.name}`,
+      ``,
+      `배송 기사: ${course.driver.name} (${course.driver.distributorName} · ${course.driver.courseName})`,
+      `신고 시각: ${timeStr}`,
+      ``,
+      `📍 매장`,
+      `${store.name}`,
+      `${store.address}`,
+      `☎ ${store.phone}`,
+      ``,
+      `📦 배송 상품`,
+      itemLines,
+      noteLine,
+      photoLine,
+      ``,
+      `⚠️ 담당자 확인 및 처리 부탁드립니다.`,
+      ``,
+      `— DDMS 자동 알림`,
+    ].filter((l) => l !== null).join('\n');
+  }, [store, course.driver, pendingPhotos]);
+
+  const handleIssueConfirmed = useCallback(async () => {
+    if (!store) return;
+    const message = buildIssueMessage();
+    setShowIssueConfirm(false);
+    updateStoreStatus(store.id, 'issue');
+
+    // 클립보드 복사
+    await Clipboard.setStringAsync(message);
+    setIssueCopied(true);
+
+    // 채팅방 오픈
+    openKakaoChat();
+  }, [store, buildIssueMessage, updateStoreStatus, openKakaoChat]);
+
+  // 특이사항 편집 시작
+  const handleEditNote = useCallback(() => {
+    setNoteDraft(store?.driverNote ?? '');
+    setNoteEditing(true);
+  }, [store]);
+
+  // 특이사항 저장
+  const handleSaveNote = useCallback(() => {
+    if (!store) return;
+    updateDriverNote(store.id, noteDraft.trim());
+    setNoteEditing(false);
+  }, [store, noteDraft, updateDriverNote]);
+
+  // 팀 채팅방 공유
+  const handleShareToTeam = useCallback(async () => {
+    if (!store) return;
+    const statusLabel =
+      store.status === 'delivered' ? `✅ 배송 완료 (${store.deliveredAt ?? ''})` :
+      store.status === 'issue' ? '🚨 이슈 신고됨' :
+      '⏳ 배송 대기';
+
+    const itemLines = store.items
+      .map(item => {
+        const boxes = Math.floor(item.quantity / item.boxUnit);
+        return `  • ${item.name} ${boxes}박스 (${item.quantity}개)`;
+      })
+      .join('\n');
+
+    const photoLine = store.photoUris && store.photoUris.length > 0
+      ? `📷 배송 사진 ${store.photoUris.filter(u => u !== 'delivered').length}장 촬영`
+      : '';
+
+    const noteLine = store.driverNote ? `📝 특이사항: ${store.driverNote}` : '';
+
+    const message = [
+      `[배송 정보 공유] ${store.name}`,
+      ``,
+      `📍 ${store.address}`,
+      `📞 ${store.phone}`,
+      ``,
+      `📦 배송 상품:`,
+      itemLines,
+      ``,
+      statusLabel,
+      photoLine,
+      noteLine,
+    ].filter(Boolean).join('\n');
+
+    try {
+      await Share.share({ message });
+    } catch (e) {
+      // 취소 시 무시
+    }
+  }, [store]);
+
+  if (!store) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Text style={{ padding: 20, color: colors.gray }}>매장 정보를 찾을 수 없습니다.</Text>
+      </SafeAreaView>
+    );
+  }
+
+  const isPending = store.status === 'pending';
+  const isDelivered = store.status === 'delivered';
+  const isIssue = store.status === 'issue';
+
+  // collectedAt이 'YYYY-MM-DD HH:MM' 또는 'HH:MM' 모두 대응
+  const formatCollectedAt = (raw?: string) => {
+    if (!raw) return '';
+    const parts = raw.trim().split(/\s+/);
+    return parts.length === 2 ? parts[1] : raw;
+  };
+  const collectedTime = formatCollectedAt(store.collectedAt);
+  // 회수 전용 매장(배송 상품 없음)은 사진 플로우 자체가 없으므로 hasPendingPhotos 항상 false
+  const hasPendingPhotos = pendingPhotos.length > 0 && store.items.length > 0;
+
+  // 전체 진행률
+  const totalCount = course.stores.length;
+  const deliveredCount = course.stores.filter((s) => s.status === 'delivered').length;
+  const progressRatio = totalCount > 0 ? deliveredCount / totalCount : 0;
+
+  // 완료 카드 진입 애니메이션
+  const completedAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (isDelivered) {
+      Animated.spring(completedAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 60,
+        friction: 8,
+      }).start();
+    }
+  }, [isDelivered]);
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.paper100} />
+
+      {/* 커스텀 헤더 */}
+      <View style={styles.header}>
+        <Pressable style={styles.backButton} onPress={() => router.replace('/(main)/(tabs)/deliveries' as any)} hitSlop={8}>
+          <Ionicons name="chevron-back" size={22} color={colors.black} />
+          <Text style={styles.backText}>목록</Text>
+        </Pressable>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {store.name}
+        </Text>
+        <View style={styles.headerRight}>
+          <StatusBadge status={store.status} size="sm" />
+          <Pressable
+            style={({ pressed }) => [styles.shareBtn, pressed && { opacity: 0.65 }]}
+            onPress={handleShareToTeam}
+            hitSlop={8}
+          >
+            <Ionicons name="share-outline" size={20} color={colors.gray} />
+          </Pressable>
+        </View>
+      </View>
+
+      {/* 진행률 스트립 */}
+      <View style={styles.progressStrip}>
+        <View style={styles.progressStripBarBg}>
+          <View style={[styles.progressStripFill, { width: `${Math.round(progressRatio * 100)}%` as any }]} />
+        </View>
+        <View style={styles.progressStripMeta}>
+          <Text style={styles.progressStripText}>{store.order}번째 배송지</Text>
+          <Text style={styles.progressStripText}>
+            <Text style={{ color: colors.orange, fontWeight: '700' }}>{deliveredCount}</Text>
+            /{totalCount} 완료
+          </Text>
+        </View>
+      </View>
+
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* 배송 메모 배너 */}
+        {store.memo ? (
+          <View style={styles.memoBanner}>
+            <View style={styles.memoHeader}>
+              <Ionicons name="warning" size={16} color={colors.black} />
+              <Text style={styles.memoTitle}>배송 메모</Text>
+            </View>
+            <Text style={styles.memoText}>{store.memo}</Text>
+          </View>
+        ) : null}
+
+        {/* 매장 정보 */}
+        <View style={styles.card}>
+          <Pressable style={styles.infoRow} onPress={handleCall}>
+            <Ionicons name="location-outline" size={18} color={colors.gray} />
+            <Text style={styles.infoText}>{store.address}</Text>
+          </Pressable>
+          <View style={styles.infoDivider} />
+          <View style={styles.infoRow}>
+            <Ionicons name="call-outline" size={18} color={colors.gray} />
+            <Text style={[styles.infoText, { flex: 1 }]}>{store.phone}</Text>
+            <Pressable style={styles.callButton} onPress={handleCall}>
+              <Text style={styles.callButtonText}>전화</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* 배송 상품 목록 — 배송 상품이 있을 때만 */}
+        {store.items.length > 0 && (
+          <>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>배송 상품</Text>
+              <View style={styles.sectionMeta}>
+                {(() => {
+                  const totalBags = store.items.reduce((s, i) => s + (i.bags ?? 0), 0);
+                  return totalBags > 0 ? (
+                    <View style={styles.totalBagBadge}>
+                      <Text style={styles.totalBagText}>🛍 쇼핑백 {totalBags}개</Text>
+                    </View>
+                  ) : null;
+                })()}
+                <Text style={styles.sectionCount}>{store.items.length}종</Text>
+              </View>
+            </View>
+            {store.items.some((i) => i.isBlack) && (
+              <View style={styles.blackInfoBanner}>
+                <Ionicons name="diamond" size={13} color="#EECB4E" />
+                <Text style={styles.blackInfoText}>블랙멤버십 상품 포함 — 픽업 매장 인계 시 우선 처리해 주세요</Text>
+              </View>
+            )}
+            <View style={styles.card}>
+              {store.items.map((item, idx) => (
+                <ItemRow
+                  key={item.code}
+                  item={item}
+                  isLast={idx === store.items.length - 1}
+                  onUpdateQty={isPending ? (qty) => updateItemQuantity(store.id, item.code, qty) : undefined}
+                  onUpdateBags={isPending ? (bags) => updateItemBags(store.id, item.code, bags) : undefined}
+                />
+              ))}
+            </View>
+          </>
+        )}
+
+        {/* 회수 상품 섹션 */}
+        {store.pickupItems && store.pickupItems.length > 0 && (
+          <>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <Ionicons name="arrow-undo" size={15} color={colors.blue} />
+                <Text style={[styles.sectionTitle, { color: colors.blue }]}>회수 상품</Text>
+              </View>
+              <View style={styles.sectionMeta}>
+                <Text style={[styles.sectionCount, { color: colors.blue }]}>{store.pickupItems.length}종</Text>
+                {store.pickupStatus === 'collected' && (
+                  <View style={styles.pickupBadgeRow}>
+                    <View style={styles.pickupDoneBadge}>
+                      <Ionicons name="checkmark" size={11} color={colors.blue} />
+                      <Text style={styles.pickupDoneText}>회수 완료 {collectedTime}</Text>
+                    </View>
+                    <Pressable
+                      style={({ pressed }) => [styles.pickupUndoTinyBtn, pressed && { opacity: 0.6 }]}
+                      onPress={() => { setPickupUndoReason(''); setShowPickupUndo(true); }}
+                      hitSlop={6}
+                    >
+                      <Ionicons name="arrow-undo-outline" size={11} color={colors.gray} />
+                      <Text style={styles.pickupUndoTinyText}>취소</Text>
+                    </Pressable>
+                  </View>
+                )}
+                {store.pickupStatus === 'issue' && (
+                  <View style={styles.pickupBadgeRow}>
+                    <View style={[styles.pickupDoneBadge, styles.pickupIssueBadge]}>
+                      <Ionicons name="alert-circle" size={11} color={colors.red} />
+                      <Text style={styles.pickupIssueText}>회수 미완료</Text>
+                    </View>
+                    <Pressable
+                      style={({ pressed }) => [styles.pickupUndoTinyBtn, pressed && { opacity: 0.6 }]}
+                      onPress={() => { setPickupUndoReason(''); setShowPickupUndo(true); }}
+                      hitSlop={6}
+                    >
+                      <Ionicons name="arrow-undo-outline" size={11} color={colors.gray} />
+                      <Text style={styles.pickupUndoTinyText}>취소</Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
+            </View>
+            <View style={[styles.card, styles.pickupCard]}>
+              {store.pickupItems.map((pItem, idx) => {
+                const isLast = idx === store.pickupItems!.length - 1;
+                return (
+                  <PickupItemRow
+                    key={pItem.code}
+                    item={pItem}
+                    isLast={isLast}
+                    onUpdateQty={isPending
+                      ? (qty) => updatePickupItemQuantity(store.id, pItem.code, qty)
+                      : undefined}
+                  />
+                );
+              })}
+              {store.pickupStatus === 'issue' && (() => {
+                const kindLabel = store.pickupFailKind
+                  ? PICKUP_FAIL_KIND_OPTIONS.find((o) => o.kind === store.pickupFailKind)?.label
+                  : null;
+                return (
+                  <View style={styles.pickupFailReasonBanner}>
+                    <Ionicons name="alert-circle-outline" size={13} color={colors.red} />
+                    <Text style={styles.pickupFailReasonText}>
+                      미완료: {kindLabel ?? '사유 없음'}
+                      {store.pickupFailReason ? ` — ${store.pickupFailReason}` : ''}
+                    </Text>
+                  </View>
+                );
+              })()}
+            </View>
+
+            {/* 기사 회수 메모 (시트 "신동주류 비고") */}
+            {pickupNoteEditing ? (
+              <View style={styles.pickupNoteEditCard}>
+                <TextInput
+                  style={styles.noteInput}
+                  value={pickupNoteDraft}
+                  onChangeText={setPickupNoteDraft}
+                  placeholder="회수 관련 비고 (예: 사장님 부재로 직원에게 인수)"
+                  placeholderTextColor={colors.gray}
+                  multiline
+                  autoFocus
+                  maxLength={150}
+                />
+                <View style={styles.noteEditActions}>
+                  <Text style={styles.noteCharCount}>{pickupNoteDraft.length}/150</Text>
+                  <View style={styles.noteEditBtns}>
+                    <Pressable style={styles.noteCancelBtn} onPress={() => setPickupNoteEditing(false)}>
+                      <Text style={styles.noteCancelText}>취소</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.noteSaveBtn, { backgroundColor: colors.blue }]}
+                      onPress={() => {
+                        updatePickupDriverNote(store.id, pickupNoteDraft.trim());
+                        setPickupNoteEditing(false);
+                      }}
+                    >
+                      <Text style={styles.noteSaveText}>저장</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            ) : store.pickupDriverNote ? (
+              <Pressable
+                style={styles.pickupDriverNoteCard}
+                onPress={() => { setPickupNoteDraft(store.pickupDriverNote ?? ''); setPickupNoteEditing(true); }}
+              >
+                <Ionicons name="document-text-outline" size={14} color={colors.blue} style={{ marginTop: 1 }} />
+                <Text style={styles.pickupDriverNoteText}>{store.pickupDriverNote}</Text>
+                <Text style={styles.pickupDriverNoteEdit}>수정</Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                style={styles.pickupDriverNoteEmpty}
+                onPress={() => { setPickupNoteDraft(''); setPickupNoteEditing(true); }}
+              >
+                <Ionicons name="add-circle-outline" size={14} color={colors.blue} />
+                <Text style={styles.pickupDriverNoteEmptyText}>회수 메모 추가 (선택)</Text>
+              </Pressable>
+            )}
+          </>
+        )}
+
+        {/* 특이사항 */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>특이사항</Text>
+          {!noteEditing && (
+            <Pressable onPress={handleEditNote} hitSlop={8}>
+              <Text style={styles.noteEditBtn}>
+                {store.driverNote ? '수정' : '+ 추가'}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+
+        {noteEditing ? (
+          <View style={styles.noteEditCard}>
+            <TextInput
+              style={styles.noteInput}
+              value={noteDraft}
+              onChangeText={setNoteDraft}
+              placeholder="현장에서 발견한 특이사항을 적어주세요"
+              placeholderTextColor={colors.gray}
+              multiline
+              autoFocus
+              maxLength={200}
+            />
+            <View style={styles.noteEditActions}>
+              <Text style={styles.noteCharCount}>{noteDraft.length}/200</Text>
+              <View style={styles.noteEditBtns}>
+                <Pressable
+                  style={styles.noteCancelBtn}
+                  onPress={() => setNoteEditing(false)}
+                >
+                  <Text style={styles.noteCancelText}>취소</Text>
+                </Pressable>
+                <Pressable style={styles.noteSaveBtn} onPress={handleSaveNote}>
+                  <Text style={styles.noteSaveText}>저장</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        ) : store.driverNote ? (
+          <Pressable style={styles.noteCard} onPress={handleEditNote}>
+            <Ionicons name="create-outline" size={15} color={colors.gray} style={{ marginTop: 1 }} />
+            <Text style={styles.noteText}>{store.driverNote}</Text>
+          </Pressable>
+        ) : (
+          <Pressable style={styles.noteEmptyCard} onPress={handleEditNote}>
+            <Ionicons name="add-circle-outline" size={16} color={colors.border} />
+            <Text style={styles.noteEmptyText}>특이사항 없음 — 탭하여 추가</Text>
+          </Pressable>
+        )}
+
+        {/* 임시 사진 프리뷰 (촬영 후 완료 확정 전) — 배송 상품 있는 매장만 */}
+        {isPending && hasPendingPhotos && store.items.length > 0 && (
+          <View style={styles.previewCard}>
+            <View style={styles.previewHeader}>
+              <Ionicons name="camera" size={16} color={colors.orange} />
+              <Text style={styles.previewTitle}>촬영된 사진 확인</Text>
+              <Text style={styles.previewCount}>{pendingPhotos.length}/3장</Text>
+            </View>
+
+            <View style={styles.photoGrid}>
+              {pendingPhotos.map((uri, idx) => (
+                <View key={idx} style={styles.photoThumbWrap}>
+                  <Image source={{ uri }} style={styles.photoThumb} resizeMode="cover" />
+                  <Pressable
+                    style={styles.photoDeleteBtn}
+                    onPress={() => handleDeletePendingPhoto(idx)}
+                    hitSlop={4}
+                  >
+                    <View style={styles.photoDeleteCircle}>
+                      <Ionicons name="close" size={10} color={colors.white} />
+                    </View>
+                  </Pressable>
+                </View>
+              ))}
+
+              {pendingPhotos.length < 3 && (
+                <Pressable
+                  style={({ pressed }) => [styles.photoAddBtn, pressed && { opacity: 0.7 }]}
+                  onPress={handleAddPendingPhoto}
+                >
+                  <Ionicons name="camera-outline" size={22} color={colors.orange} />
+                  <Text style={styles.photoAddText}>추가</Text>
+                </Pressable>
+              )}
+            </View>
+
+            {/* 쇼핑백 인라인 체크 — 부족 기록이 있으면 빨간 상태로 표시 */}
+            {storeTotalBags > 0 && (
+              <Pressable
+                style={[styles.bagInlineRow, hasAnyBagMismatch && styles.bagInlineRowShortage]}
+                onPress={() => !hasAnyBagMismatch && setBagChecked((v) => !v)}
+                disabled={hasAnyBagMismatch}
+              >
+                <View style={[
+                  styles.bagCheckBox,
+                  bagChecked && !hasAnyBagMismatch && styles.bagCheckBoxChecked,
+                  hasAnyBagMismatch && styles.bagCheckBoxShortage,
+                ]}>
+                  {hasAnyBagMismatch ? (
+                    <Ionicons name="alert" size={14} color={colors.white} />
+                  ) : bagChecked ? (
+                    <Ionicons name="checkmark" size={14} color={colors.white} />
+                  ) : null}
+                </View>
+                <Text style={[styles.bagInlineLabel, hasAnyBagMismatch && { color: colors.red }]}>
+                  {hasAnyBagMismatch
+                    ? `🛍 쇼핑백 ${storeActualBags}/${storeTotalBags}개 (${storeBagShortage}개 부족 기록됨)`
+                    : `🛍 쇼핑백 ${storeTotalBags}개 포함 확인`}
+                </Text>
+              </Pressable>
+            )}
+
+            <Text style={styles.previewHint}>사진 확인 후 완료 버튼을 눌러주세요</Text>
+          </View>
+        )}
+
+        {/* 배송 완료 상태 */}
+        {isDelivered && (() => {
+          const photoUris = store.photoUris ?? [];
+          const realPhotos = photoUris.filter(u => u !== 'delivered');
+          const photoCount = photoUris.length;
+          return (
+            <Animated.View
+              style={[
+                styles.completedCard,
+                {
+                  opacity: completedAnim,
+                  transform: [{
+                    scale: completedAnim.interpolate({
+                      inputRange: [0, 1], outputRange: [0.94, 1],
+                    }),
+                  }],
+                },
+              ]}
+            >
+              {/* 완료 헤더 */}
+              <View style={styles.completedHeader}>
+                <Animated.View style={{
+                  transform: [{
+                    scale: completedAnim.interpolate({
+                      inputRange: [0, 0.6, 1], outputRange: [0.5, 1.2, 1],
+                    }),
+                  }],
+                }}>
+                  <Ionicons name="checkmark-circle" size={28} color={colors.green} />
+                </Animated.View>
+                <View>
+                  <Text style={styles.completedTitle}>배송 완료</Text>
+                  {store.deliveredAt && (
+                    <Text style={styles.completedTime}>{store.deliveredAt} 처리됨</Text>
+                  )}
+                </View>
+              </View>
+
+              {/* 사진 섹션 */}
+              <View style={styles.photoSection}>
+                <View style={styles.photoSectionHeader}>
+                  <Text style={styles.photoSectionTitle}>배송 사진</Text>
+                  <Text style={[
+                    styles.photoCount,
+                    photoCount >= 1 && { color: colors.green },
+                  ]}>
+                    {photoCount}/3장
+                  </Text>
+                </View>
+
+                <View style={styles.photoGrid}>
+                  {photoUris.map((uri, idx) => (
+                    <View key={idx} style={styles.photoThumbWrap}>
+                      {uri !== 'delivered' ? (
+                        <Image
+                          source={{ uri }}
+                          style={styles.photoThumb}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={[styles.photoThumb, styles.photoThumbPlaceholder]}>
+                          <Ionicons name="camera" size={24} color={colors.border} />
+                        </View>
+                      )}
+                      {photoCount > 1 && (
+                        <Pressable
+                          style={styles.photoDeleteBtn}
+                          onPress={() => handleDeletePhoto(idx)}
+                          hitSlop={4}
+                        >
+                          <View style={styles.photoDeleteCircle}>
+                            <Ionicons name="close" size={10} color={colors.white} />
+                          </View>
+                        </Pressable>
+                      )}
+                    </View>
+                  ))}
+
+                  {photoCount < 3 && (
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.photoAddBtn,
+                        pressed && { opacity: 0.7 },
+                      ]}
+                      onPress={handleAddPhoto}
+                    >
+                      <Ionicons name="camera-outline" size={22} color={colors.orange} />
+                      <Text style={styles.photoAddText}>추가</Text>
+                    </Pressable>
+                  )}
+                </View>
+
+                {realPhotos.length === 0 && (
+                  <Text style={styles.photoHint}>📷 사진이 아직 없어요 — 추가로 찍어두세요</Text>
+                )}
+              </View>
+            </Animated.View>
+          );
+        })()}
+
+        {/* 이슈 상태 */}
+        {isIssue && (
+          <View style={styles.issueCard}>
+            {/* 헤더 */}
+            <View style={styles.issueCardHeader}>
+              <View style={styles.issueIconWrap}>
+                <Ionicons name="alert-circle" size={24} color={colors.red} />
+              </View>
+              <View style={styles.issueBody}>
+                <Text style={styles.issueTitle}>이슈 신고 완료</Text>
+                <Text style={styles.issueText}>담당자 확인 대기 중</Text>
+              </View>
+            </View>
+
+            {/* 메시지 복사 안내 */}
+            {issueCopied && (
+              <View style={styles.issueCopiedRow}>
+                <Ionicons name="checkmark-circle" size={14} color={colors.green} />
+                <Text style={styles.issueCopiedText}>
+                  이슈 메시지가 클립보드에 복사되었습니다
+                </Text>
+              </View>
+            )}
+
+            {/* 공유 액션 */}
+            <View style={styles.issueActions}>
+              {/* 채팅방 + 메시지 붙여넣기 */}
+              <Pressable
+                style={({ pressed }) => [styles.issueActionBtn, styles.issueActionBtnKakao, pressed && { opacity: 0.85 }]}
+                onPress={async () => {
+                  const msg = buildIssueMessage();
+                  await Clipboard.setStringAsync(msg);
+                  setIssueCopied(true);
+                  openKakaoChat();
+                }}
+              >
+                <Text style={styles.issueActionEmoji}>💬</Text>
+                <View>
+                  <Text style={styles.issueActionLabel}>채팅방 열기</Text>
+                  <Text style={styles.issueActionSub}>메시지 자동 복사됨</Text>
+                </View>
+              </Pressable>
+
+              {/* 사진 공유 */}
+              {store.photoUris && store.photoUris.filter(u => u !== 'delivered').length > 0 && (
+                <Pressable
+                  style={({ pressed }) => [styles.issueActionBtn, styles.issueActionBtnPhoto, pressed && { opacity: 0.85 }]}
+                  onPress={async () => {
+                    const realPhotos = (store.photoUris ?? []).filter(u => u !== 'delivered');
+                    if (realPhotos.length === 0) return;
+                    try {
+                      await Share.share({
+                        message: `[DDMS 이슈 신고] ${store.name} 현장 사진`,
+                        url: realPhotos[0],
+                      });
+                    } catch {
+                      // 취소 무시
+                    }
+                  }}
+                >
+                  <Ionicons name="images-outline" size={20} color={colors.black} />
+                  <View>
+                    <Text style={[styles.issueActionLabel, { color: colors.black }]}>사진 공유</Text>
+                    <Text style={[styles.issueActionSub, { color: colors.gray }]}>공유 시트로 전송</Text>
+                  </View>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        )}
+
+        <View style={{ height: 100 }} />
+      </ScrollView>
+
+      {/* 하단 액션 버튼 */}
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
+        {/* 사진 촬영 전 */}
+        {isPending && !hasPendingPhotos && (
+          <>
+            {/* 배송 상품이 있으면 사진 촬영 필요, 없으면(회수 전용) 회수 완료 버튼만 */}
+            {store.items.length > 0 ? (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  pressed && styles.primaryButtonPressed,
+                ]}
+                onPress={handleTakePhoto}
+              >
+                <Ionicons name="camera" size={22} color={colors.white} />
+                <Text style={styles.primaryButtonText}>사진 촬영하기</Text>
+              </Pressable>
+            ) : (
+              /* 회수 전용 매장 — 사진 없이 회수 완료 처리 */
+              <View style={styles.pickupActionGroup}>
+                {store.pickupStatus === 'collected' ? (
+                  <View style={styles.pickupDoneButton}>
+                    <Ionicons name="checkmark-circle" size={20} color={colors.blue} />
+                    <Text style={styles.pickupDoneButtonText}>회수 완료됨 ({collectedTime})</Text>
+                  </View>
+                ) : store.pickupStatus === 'issue' ? (
+                  <View style={[styles.pickupDoneButton, styles.pickupIssueButton]}>
+                    <Ionicons name="alert-circle" size={20} color={colors.red} />
+                    <Text style={[styles.pickupDoneButtonText, { color: colors.red }]}>
+                      회수 미완료{store.pickupFailReason ? ` — ${store.pickupFailReason}` : ''}
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    <Pressable
+                      style={({ pressed }) => [styles.pickupCollectButton, pressed && { opacity: 0.85 }]}
+                      onPress={handlePickupOnlyCollected}
+                    >
+                      <Ionicons name="arrow-undo" size={20} color={colors.white} />
+                      <Text style={styles.primaryButtonText}>회수 완료</Text>
+                    </Pressable>
+                    <Pressable
+                      style={({ pressed }) => [styles.pickupFailButton, pressed && { opacity: 0.85 }]}
+                      onPress={() => { setPickupFailDraft(''); setPickupFailKindDraft('매장에주류없음'); setShowPickupFailConfirm(true); }}
+                    >
+                      <Ionicons name="close-circle-outline" size={18} color={colors.red} />
+                      <Text style={styles.pickupFailButtonText}>회수 미완료</Text>
+                    </Pressable>
+                  </>
+                )}
+              </View>
+            )}
+            {/* 회수 상품이 있는 경우 배송 완료 버튼 아래 회수 버튼 */}
+            {store.items.length > 0 && store.pickupItems && store.pickupItems.length > 0 && (
+              store.pickupStatus === 'collected' ? (
+                <Pressable
+                  style={({ pressed }) => [styles.pickupDoneChip, pressed && { opacity: 0.7 }]}
+                  onPress={() => { setPickupUndoReason(''); setShowPickupUndo(true); }}
+                >
+                  <Ionicons name="checkmark-circle" size={14} color={colors.blue} />
+                  <Text style={styles.pickupDoneChipText}>회수 완료 {collectedTime}</Text>
+                  <View style={styles.pickupChipUndoBtn}>
+                    <Ionicons name="arrow-undo-outline" size={11} color={colors.gray} />
+                    <Text style={styles.pickupChipUndoText}>취소</Text>
+                  </View>
+                </Pressable>
+              ) : store.pickupStatus === 'issue' ? (
+                <Pressable
+                  style={({ pressed }) => [styles.pickupDoneChip, styles.pickupIssueChip, pressed && { opacity: 0.7 }]}
+                  onPress={() => { setPickupUndoReason(''); setShowPickupUndo(true); }}
+                >
+                  <Ionicons name="alert-circle" size={14} color={colors.red} />
+                  <Text style={[styles.pickupDoneChipText, { color: colors.red }]}>회수 미완료</Text>
+                  <View style={styles.pickupChipUndoBtn}>
+                    <Ionicons name="arrow-undo-outline" size={11} color={colors.gray} />
+                    <Text style={styles.pickupChipUndoText}>취소</Text>
+                  </View>
+                </Pressable>
+              ) : (
+                <View style={styles.pickupSmallRow}>
+                  <Pressable
+                    style={({ pressed }) => [styles.pickupCollectButtonSmall, { flex: 1 }, pressed && { opacity: 0.85 }]}
+                    onPress={() => updatePickupStatus(store.id, 'collected')}
+                  >
+                    <Ionicons name="arrow-undo" size={15} color={colors.blue} />
+                    <Text style={styles.pickupCollectButtonSmallText}>회수 완료</Text>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [styles.pickupFailButtonSmall, { flex: 1 }, pressed && { opacity: 0.85 }]}
+                    onPress={() => { setPickupFailDraft(''); setPickupFailKindDraft('매장에주류없음'); setShowPickupFailConfirm(true); }}
+                  >
+                    <Ionicons name="close-circle-outline" size={15} color={colors.red} />
+                    <Text style={styles.pickupFailButtonSmallText}>회수 미완료</Text>
+                  </Pressable>
+                </View>
+              )
+            )}
+            <Pressable style={styles.issueButton} onPress={handleReportIssue}>
+              <Ionicons name="alert-circle-outline" size={16} color={colors.red} />
+              <Text style={styles.issueButtonText}>이슈 신고</Text>
+            </Pressable>
+          </>
+        )}
+
+        {/* 사진 촬영 후 → 완료 확정 대기 — 배송 상품 있는 매장만 */}
+        {isPending && hasPendingPhotos && store.items.length > 0 && (
+          <>
+            <Pressable
+              style={({ pressed }) => [
+                styles.primaryButton,
+                !canConfirmDelivery && styles.primaryButtonDimmed,
+                pressed && canConfirmDelivery && styles.primaryButtonPressed,
+              ]}
+              onPress={canConfirmDelivery ? handleConfirmDelivery : undefined}
+            >
+              <Ionicons name="checkmark-circle" size={22} color={colors.white} />
+              <Text style={styles.primaryButtonText}>배송 완료 확정</Text>
+            </Pressable>
+            {/* 회수 미처리 시 안내 */}
+            {!pickupReady && bagReady && (
+              <View style={styles.pickupBlockHint}>
+                <Ionicons name="information-circle" size={13} color={colors.blue} />
+                <Text style={styles.pickupBlockHintText}>
+                  아래 회수 상품을 먼저 처리(완료/미완료)해 주세요
+                </Text>
+              </View>
+            )}
+            {/* 배송+회수 동시 매장: 회수 완료 처리 */}
+            {store.pickupItems && store.pickupItems.length > 0 && (
+              store.pickupStatus === 'collected' ? (
+                <Pressable
+                  style={({ pressed }) => [styles.pickupDoneChip, pressed && { opacity: 0.7 }]}
+                  onPress={() => { setPickupUndoReason(''); setShowPickupUndo(true); }}
+                >
+                  <Ionicons name="checkmark-circle" size={14} color={colors.blue} />
+                  <Text style={styles.pickupDoneChipText}>회수 완료 {collectedTime}</Text>
+                  <View style={styles.pickupChipUndoBtn}>
+                    <Ionicons name="arrow-undo-outline" size={11} color={colors.gray} />
+                    <Text style={styles.pickupChipUndoText}>취소</Text>
+                  </View>
+                </Pressable>
+              ) : store.pickupStatus === 'issue' ? (
+                <Pressable
+                  style={({ pressed }) => [styles.pickupDoneChip, styles.pickupIssueChip, pressed && { opacity: 0.7 }]}
+                  onPress={() => { setPickupUndoReason(''); setShowPickupUndo(true); }}
+                >
+                  <Ionicons name="alert-circle" size={14} color={colors.red} />
+                  <Text style={[styles.pickupDoneChipText, { color: colors.red }]}>회수 미완료</Text>
+                  <View style={styles.pickupChipUndoBtn}>
+                    <Ionicons name="arrow-undo-outline" size={11} color={colors.gray} />
+                    <Text style={styles.pickupChipUndoText}>취소</Text>
+                  </View>
+                </Pressable>
+              ) : (
+                <View style={styles.pickupSmallRow}>
+                  <Pressable
+                    style={({ pressed }) => [styles.pickupCollectButtonSmall, { flex: 1 }, pressed && { opacity: 0.85 }]}
+                    onPress={() => updatePickupStatus(store.id, 'collected')}
+                  >
+                    <Ionicons name="arrow-undo" size={15} color={colors.blue} />
+                    <Text style={styles.pickupCollectButtonSmallText}>회수 완료</Text>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [styles.pickupFailButtonSmall, { flex: 1 }, pressed && { opacity: 0.85 }]}
+                    onPress={() => { setPickupFailDraft(''); setPickupFailKindDraft('매장에주류없음'); setShowPickupFailConfirm(true); }}
+                  >
+                    <Ionicons name="close-circle-outline" size={15} color={colors.red} />
+                    <Text style={styles.pickupFailButtonSmallText}>회수 미완료</Text>
+                  </Pressable>
+                </View>
+              )
+            )}
+            <View style={styles.secondaryRow}>
+              <Pressable
+                style={({ pressed }) => [styles.retakeButton, pressed && { opacity: 0.7 }]}
+                onPress={handleTakePhoto}
+              >
+                <Ionicons name="camera-outline" size={16} color={colors.gray} />
+                <Text style={styles.retakeButtonText}>다시 찍기</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.issueButtonSmall, pressed && { opacity: 0.7 }]}
+                onPress={handleReportIssue}
+              >
+                <Ionicons name="alert-circle-outline" size={16} color={colors.red} />
+                <Text style={styles.issueButtonText}>이슈 신고</Text>
+              </Pressable>
+            </View>
+          </>
+        )}
+
+
+        {/* 이슈 상태 */}
+        {isIssue && (
+          <Pressable
+            style={({ pressed }) => [
+              styles.primaryButton,
+              { backgroundColor: colors.red },
+              pressed && styles.primaryButtonPressed,
+            ]}
+            onPress={openKakaoChat}
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={20} color={colors.white} />
+            <Text style={styles.primaryButtonText}>배송팀 채팅방 열기</Text>
+          </Pressable>
+        )}
+      </View>
+
+      {/* 이슈 신고 확인 오버레이 */}
+      {showIssueConfirm && (
+        <View style={styles.issueOverlay}>
+          <View style={styles.issueModal}>
+            <View style={styles.issueModalIcon}>
+              <Ionicons name="alert-circle" size={32} color={colors.red} />
+            </View>
+            <Text style={styles.issueModalTitle}>이슈 신고</Text>
+            <Text style={styles.issueModalMsg}>
+              이슈 내용이 자동으로 메시지에 담기고{'\n'}채팅방이 열립니다.
+            </Text>
+            <View style={styles.issueModalSteps}>
+              <View style={styles.issueModalStep}>
+                <Text style={styles.issueModalStepNum}>1</Text>
+                <Text style={styles.issueModalStepText}>이슈 메시지 클립보드 복사</Text>
+              </View>
+              <View style={styles.issueModalStep}>
+                <Text style={styles.issueModalStepNum}>2</Text>
+                <Text style={styles.issueModalStepText}>채팅방 자동 오픈</Text>
+              </View>
+              <View style={styles.issueModalStep}>
+                <Text style={styles.issueModalStepNum}>3</Text>
+                <Text style={styles.issueModalStepText}>붙여넣기 후 전송</Text>
+              </View>
+            </View>
+            <View style={styles.issueModalBtns}>
+              <Pressable
+                style={({ pressed }) => [styles.issueModalCancel, pressed && { opacity: 0.7 }]}
+                onPress={() => setShowIssueConfirm(false)}
+              >
+                <Text style={styles.issueModalCancelText}>취소</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.issueModalConfirm, pressed && { opacity: 0.88 }]}
+                onPress={handleIssueConfirmed}
+              >
+                <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.white} />
+                <Text style={styles.issueModalConfirmText}>신고 및 채팅방 열기</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* 회수 완료/미완료 취소 popup — 배송 완료 취소 스타일 */}
+      {showPickupUndo && (() => {
+        const isCollected = store.pickupStatus === 'collected';
+        const isIssue = store.pickupStatus === 'issue';
+        const pickupItems = store.pickupItems ?? [];
+        const totalPickupQty = pickupItems.reduce((s, p) => s + (p.actualQuantity ?? p.quantity), 0);
+        const canConfirm = pickupUndoReason.trim().length > 0;
+        const previewCount = 2;
+        const moreCount = Math.max(0, pickupItems.length - previewCount);
+        const kindLabel = store.pickupFailKind
+          ? PICKUP_FAIL_KIND_OPTIONS.find((o) => o.kind === store.pickupFailKind)?.label
+          : null;
+        return (
+          <View style={styles.issueOverlay}>
+            <View style={styles.popupCard}>
+              {/* 헤더 */}
+              <View style={styles.undoPopupHeader}>
+                <View style={[styles.undoPopupIconWrap, { backgroundColor: '#EEF0FF' }]}>
+                  <Ionicons name="arrow-undo-circle-outline" size={28} color={colors.blue} />
+                </View>
+                <View style={styles.undoPopupHeaderText}>
+                  <Text style={styles.undoPopupTitle}>
+                    {isCollected ? '회수 완료 취소' : '회수 미완료 취소'}
+                  </Text>
+                  <Text style={styles.undoPopupStoreName} numberOfLines={1}>{store.name}</Text>
+                </View>
+              </View>
+
+              {/* 회수 상품 요약 */}
+              <View style={styles.undoSummaryBox}>
+                <View style={styles.undoSummaryRow}>
+                  <Ionicons name={isCollected ? 'time-outline' : 'alert-circle-outline'} size={14} color={colors.gray} />
+                  <Text style={styles.undoSummaryLabel}>
+                    {isCollected ? '완료 시각' : '미완료 사유'}
+                  </Text>
+                  <Text style={styles.undoSummaryValue} numberOfLines={1}>
+                    {isCollected
+                      ? (collectedTime || '—')
+                      : (kindLabel ?? store.pickupFailReason ?? '—')}
+                  </Text>
+                </View>
+                <View style={styles.undoSummaryDivider} />
+                <View style={styles.undoSummaryRow}>
+                  <Ionicons name="arrow-undo" size={14} color={colors.blue} />
+                  <Text style={styles.undoSummaryLabel}>회수 상품</Text>
+                  <Text style={styles.undoSummaryValue}>
+                    {pickupItems.length}종 · 총 {totalPickupQty}개
+                  </Text>
+                </View>
+                <View style={styles.undoSummaryDivider} />
+                {pickupItems.slice(0, previewCount).map((p, i) => {
+                  const qty = p.actualQuantity ?? p.quantity;
+                  const boxes = p.boxUnit > 0 ? Math.floor(qty / p.boxUnit) : 0;
+                  return (
+                    <Text key={i} style={styles.undoSummaryItem} numberOfLines={1}>
+                      · {p.name} {boxes}박스 ({qty}개)
+                    </Text>
+                  );
+                })}
+                {moreCount > 0 && (
+                  <Text style={styles.undoSummaryMore}>외 {moreCount}종 더 보기</Text>
+                )}
+              </View>
+
+              {/* 취소 사유 입력 */}
+              <View style={styles.undoReasonWrap}>
+                <Text style={styles.undoReasonLabel}>
+                  취소 사유 <Text style={{ color: colors.red }}>*</Text>
+                </Text>
+                <TextInput
+                  style={styles.undoReasonInput}
+                  value={pickupUndoReason}
+                  onChangeText={setPickupUndoReason}
+                  placeholder={isCollected
+                    ? '회수 완료를 취소하는 사유를 입력해 주세요'
+                    : '회수 미완료를 취소하는 사유를 입력해 주세요'}
+                  placeholderTextColor={colors.gray}
+                  multiline
+                  maxLength={100}
+                  autoFocus
+                  textAlignVertical="top"
+                />
+                <Text style={styles.undoReasonCount}>{pickupUndoReason.length}/100</Text>
+              </View>
+
+              {/* 버튼 */}
+              <View style={styles.undoPopupBtns}>
+                <Pressable
+                  style={({ pressed }) => [styles.undoPopupCancelBtn, pressed && { opacity: 0.75 }]}
+                  onPress={() => { setShowPickupUndo(false); setPickupUndoReason(''); }}
+                >
+                  <Text style={styles.undoPopupCancelText}>아니오</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.undoPopupConfirmBtn,
+                    !canConfirm && styles.undoPopupConfirmBtnDisabled,
+                    pressed && canConfirm && { opacity: 0.75 },
+                  ]}
+                  disabled={!canConfirm}
+                  onPress={() => {
+                    if (!canConfirm) return;
+                    // pending으로 되돌리기 — 회수 메모 끝에 취소 사유 부착(선택적)
+                    const newNote = [
+                      store.pickupDriverNote,
+                      `[${isCollected ? '완료' : '미완료'} 취소] ${pickupUndoReason.trim()}`,
+                    ].filter(Boolean).join('\n');
+                    updatePickupStatus(store.id, 'pending');
+                    updatePickupDriverNote(store.id, newNote);
+                    setShowPickupUndo(false);
+                    setPickupUndoReason('');
+                  }}
+                >
+                  <Text style={[
+                    styles.undoPopupConfirmText,
+                    !canConfirm && { color: 'rgba(255,255,255,0.5)' },
+                  ]}>
+                    {isCollected ? '완료 취소' : '미완료 취소'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        );
+      })()}
+
+      {/* 회수 미완료 오버레이 */}
+      {showPickupFailConfirm && (
+        <View style={styles.issueOverlay}>
+          <View style={styles.issueModal}>
+            <View style={[styles.issueModalIcon, { backgroundColor: colors.red50 }]}>
+              <Ionicons name="alert-circle" size={32} color={colors.red} />
+            </View>
+            <Text style={styles.issueModalTitle}>회수 미완료</Text>
+            <Text style={styles.issueModalMsg}>
+              {store.name}{'\n'}
+              {store.pickupItems?.length}종 상품 회수를 완료하지 못한 사유를 선택하세요.
+            </Text>
+
+            {/* enum 선택 */}
+            <View style={styles.failKindGrid}>
+              {PICKUP_FAIL_KIND_OPTIONS.map((opt) => {
+                const selected = pickupFailKindDraft === opt.kind;
+                return (
+                  <Pressable
+                    key={opt.kind}
+                    style={({ pressed }) => [
+                      styles.failKindChip,
+                      selected && styles.failKindChipActive,
+                      pressed && { opacity: 0.85 },
+                    ]}
+                    onPress={() => setPickupFailKindDraft(opt.kind)}
+                  >
+                    <View style={[styles.failKindRadio, selected && styles.failKindRadioActive]}>
+                      {selected && <View style={styles.failKindRadioDot} />}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.failKindLabel, selected && { color: colors.red }]}>{opt.label}</Text>
+                      <Text style={styles.failKindHint}>{opt.hint}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {/* 메모 (필수: 기타 / 선택: 그 외) */}
+            <TextInput
+              style={styles.pickupFailInput}
+              value={pickupFailDraft}
+              onChangeText={setPickupFailDraft}
+              placeholder={
+                pickupFailKindDraft === '기타'
+                  ? '사유 직접 입력 (필수)'
+                  : '추가 메모 (선택)'
+              }
+              placeholderTextColor={colors.gray}
+              multiline
+              maxLength={100}
+              textAlignVertical="top"
+            />
+            <View style={styles.issueModalBtns}>
+              <Pressable
+                style={({ pressed }) => [styles.issueModalCancel, pressed && { opacity: 0.7 }]}
+                onPress={() => setShowPickupFailConfirm(false)}
+              >
+                <Text style={styles.issueModalCancelText}>아니오</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.issueModalConfirm,
+                  { backgroundColor: colors.red },
+                  // 기타인데 메모 비었으면 비활성
+                  pickupFailKindDraft === '기타' && pickupFailDraft.trim().length === 0 && styles.issueModalConfirmDisabled,
+                  pressed && { opacity: 0.88 },
+                ]}
+                disabled={pickupFailKindDraft === '기타' && pickupFailDraft.trim().length === 0}
+                onPress={() => {
+                  const reason = pickupFailDraft.trim() || undefined;
+                  setShowPickupFailConfirm(false);
+                  // 회수 전용 매장은 미완료 처리 = 매장 완료 = 다음 매장 이동
+                  if (store.items.length === 0) {
+                    handlePickupOnlyIssue(reason, pickupFailKindDraft);
+                  } else {
+                    updatePickupStatus(store.id, 'issue', reason, pickupFailKindDraft);
+                  }
+                }}
+              >
+                <Ionicons name="alert-circle-outline" size={16} color={colors.white} />
+                <Text style={styles.issueModalConfirmText}>미완료 처리</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* 배송 완료 토스트 — 탭하면 즉시 이동 */}
+      {toastVisible && (
+        <Pressable
+          onPress={() => {
+            toastAnim.stopAnimation();
+            if (nextStoreId) {
+              router.replace(`/(main)/store/${nextStoreId}` as any);
+            } else {
+              router.replace('/(main)/(tabs)/dashboard');
+            }
+          }}
+        >
+          <Animated.View
+            style={[
+              styles.toast,
+              {
+                opacity: toastAnim,
+                transform: [{
+                  translateY: toastAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [20, 0],
+                  }),
+                }],
+              },
+            ]}
+          >
+            <Ionicons
+              name={toastKind === 'pickup-issue' ? 'alert-circle' : 'checkmark-circle'}
+              size={18}
+              color={colors.white}
+            />
+            <View style={{ flex: 1 }}>
+              {remainingCount > 0 ? (
+                <>
+                  <Text style={styles.toastText}>
+                    {toastKind === 'delivered' && `${completedOrder}/${course.stores.length} 완료`}
+                    {toastKind === 'pickup-collected' && `${completedOrder}/${course.stores.length} · 회수 완료`}
+                    {toastKind === 'pickup-issue' && `${completedOrder}/${course.stores.length} · 회수 미완료 공유됨`}
+                  </Text>
+                  {nextStoreName && (
+                    <Text style={styles.toastSub} numberOfLines={1}>다음 → {nextStoreName}</Text>
+                  )}
+                </>
+              ) : (
+                <Text style={styles.toastText}>오늘 배송 모두 완료! 🎉</Text>
+              )}
+            </View>
+          </Animated.View>
+        </Pressable>
+      )}
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.paper50,
+  },
+
+  // 헤더
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.paper100,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: 8,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    minWidth: 64,
+  },
+  backText: {
+    fontSize: 15,
+    color: colors.orange,
+    fontWeight: '600',
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.black,
+    textAlign: 'center',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minWidth: 64,
+    justifyContent: 'flex-end',
+  },
+  shareBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // 진행률 스트립
+  progressStrip: {
+    backgroundColor: colors.paper100,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: 7,
+  },
+  progressStripBarBg: {
+    height: 3,
+    backgroundColor: colors.border,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressStripFill: {
+    height: '100%',
+    backgroundColor: colors.orange,
+    borderRadius: 2,
+  },
+  progressStripMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  progressStripText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.black,
+    fontVariant: ['tabular-nums'],
+  },
+
+  // 스크롤
+  scroll: { flex: 1 },
+  scrollContent: { padding: 16, gap: 12 },
+
+  // 배송 메모
+  memoBanner: {
+    backgroundColor: colors.glow100,
+    borderRadius: 12,
+    padding: 16,
+    gap: 8,
+  },
+  memoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  memoTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.black,
+  },
+  memoText: {
+    fontSize: 14,
+    color: colors.black,
+    lineHeight: 20,
+  },
+
+  // 카드
+  card: {
+    backgroundColor: colors.white,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+
+  // 매장 정보
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 10,
+  },
+  infoDivider: {
+    height: 1,
+    backgroundColor: colors.paper100,
+    marginLeft: 44,
+  },
+  infoText: {
+    fontSize: 14,
+    color: colors.black,
+    flex: 1,
+    lineHeight: 20,
+  },
+  callButton: {
+    backgroundColor: colors.orange,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  callButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.white,
+  },
+
+  // 섹션 헤더
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    marginTop: 4,
+  },
+  sectionMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.black,
+  },
+  sectionCount: {
+    fontSize: 14,
+    color: colors.black,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+  totalBagBadge: {
+    backgroundColor: '#FFF3ED',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#FFD0B5',
+  },
+  totalBagText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#C44A00',
+  },
+  blackInfoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#1A1A1A',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  blackInfoText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#EECB4E',
+    lineHeight: 17,
+  },
+
+  // 상품 행
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  itemRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.paper100,
+  },
+  itemThumbWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 10,
+    overflow: 'hidden',
+    flexShrink: 0,
+    position: 'relative',
+  },
+  itemThumb: {
+    width: 52,
+    height: 52,
+    borderRadius: 10,
+    backgroundColor: colors.paper200,
+  },
+  itemThumbZoomIcon: {
+    position: 'absolute',
+    bottom: 3,
+    right: 3,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 4,
+    padding: 2,
+  },
+  itemBlackBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#1A1A1A',
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    flexShrink: 0,
+  },
+  itemBlackBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#EECB4E',
+    letterSpacing: 0.3,
+  },
+  itemLeft: { flex: 1, gap: 3 },
+  itemNameRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  itemName: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.black,
+    lineHeight: 20,
+    flexShrink: 1,
+  },
+  itemMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  itemCode: {
+    fontSize: 12,
+    color: colors.gray,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+  bagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFF3ED',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: '#FFD0B5',
+  },
+  bagChipText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#C44A00',
+  },
+  bagChipMismatch: {
+    backgroundColor: colors.red50,
+    borderColor: colors.red,
+  },
+  bagChipMismatchText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.red,
+    fontVariant: ['tabular-nums'],
+  },
+  itemNoteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 4,
+    backgroundColor: 'rgba(254,80,0,0.06)',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    marginTop: 2,
+  },
+  itemNoteText: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.black,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
+  itemRight: { alignItems: 'flex-end', gap: 2, paddingTop: 2 },
+  itemQty: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.black,
+    fontVariant: ['tabular-nums'],
+  },
+  itemQtySub: {
+    fontSize: 13,
+    color: colors.gray,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+
+  // 이미지 확대 모달
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.88)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalImage: {
+    width: SCREEN_W - 40,
+    height: SCREEN_W - 40,
+    borderRadius: 16,
+  },
+  modalCloseBtn: {
+    position: 'absolute',
+    top: 60,
+    right: 20,
+  },
+  modalCloseCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+
+  // 특이사항
+  noteEditBtn: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.orange,
+  },
+  noteEditCard: {
+    backgroundColor: colors.white,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: colors.orange,
+  },
+  noteInput: {
+    fontSize: 14,
+    color: colors.black,
+    lineHeight: 20,
+    padding: 14,
+    minHeight: 88,
+    textAlignVertical: 'top',
+  },
+  noteEditActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.paper100,
+    backgroundColor: colors.paper50,
+  },
+  noteCharCount: {
+    fontSize: 11,
+    color: colors.gray,
+    fontVariant: ['tabular-nums'],
+  },
+  noteEditBtns: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  noteCancelBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: colors.paper200,
+  },
+  noteCancelText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.gray,
+  },
+  noteSaveBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: colors.orange,
+  },
+  noteSaveText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.white,
+  },
+  noteCard: {
+    backgroundColor: colors.white,
+    borderRadius: 12,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  noteText: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.black,
+    lineHeight: 20,
+  },
+  noteEmptyCard: {
+    backgroundColor: colors.paper100,
+    borderRadius: 12,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+  },
+  noteEmptyText: {
+    fontSize: 13,
+    color: colors.gray,
+  },
+
+  // 임시 사진 프리뷰 카드
+  previewCard: {
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+    borderWidth: 1.5,
+    borderColor: colors.orange,
+  },
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  previewTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.black,
+  },
+  previewCount: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.orange,
+    fontVariant: ['tabular-nums'],
+  },
+  previewHint: {
+    fontSize: 12,
+    color: colors.gray,
+    lineHeight: 18,
+  },
+  bagInlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#FFF3ED',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#FFD0B5',
+  },
+  bagInlineLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#C44A00',
+    flex: 1,
+  },
+  bagInlineRowShortage: {
+    backgroundColor: colors.red50,
+    borderColor: colors.red,
+  },
+  bagCheckBoxShortage: {
+    borderColor: colors.red,
+    backgroundColor: colors.red,
+  },
+
+  // 배송 완료 카드
+  completedCard: {
+    backgroundColor: colors.green50,
+    borderRadius: 16,
+    padding: 20,
+    gap: 16,
+    borderWidth: 1,
+    borderColor: colors.green100,
+  },
+  completedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  completedTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.green,
+  },
+  completedTime: {
+    fontSize: 12,
+    color: colors.green,
+    opacity: 0.8,
+    marginTop: 2,
+  },
+
+  // 사진 섹션
+  photoSection: {
+    gap: 10,
+  },
+  photoSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  photoSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.black,
+  },
+  photoCount: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.gray,
+    fontVariant: ['tabular-nums'],
+  },
+  photoGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  photoThumbWrap: {
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
+    borderRadius: 10,
+    overflow: 'visible',
+  },
+  photoThumb: {
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
+    borderRadius: 10,
+  },
+  photoThumbPlaceholder: {
+    backgroundColor: colors.paper200,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoDeleteBtn: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+  },
+  photoDeleteCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.white,
+  },
+  photoAddBtn: {
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: colors.orange,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(254,80,0,0.04)',
+  },
+  photoAddText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.orange,
+  },
+  photoHint: {
+    fontSize: 12,
+    color: colors.gray,
+    lineHeight: 18,
+  },
+
+  // 이슈 카드
+  issueCard: {
+    backgroundColor: colors.red50,
+    borderRadius: 16,
+    padding: 16,
+    gap: 14,
+    borderWidth: 1,
+    borderColor: colors.red,
+  },
+  issueIconWrap: {
+    paddingTop: 2,
+  },
+  issueBody: {
+    flex: 1,
+    gap: 3,
+  },
+  issueTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.red,
+  },
+  issueText: {
+    fontSize: 13,
+    color: colors.red,
+    fontWeight: '500',
+  },
+  issueHintBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  issueHint: {
+    fontSize: 12,
+    color: colors.orange,
+    fontWeight: '600',
+  },
+
+  // 하단 액션
+  bottomBar: {
+    backgroundColor: colors.paper50,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+    gap: 10,
+  },
+  primaryButton: {
+    backgroundColor: colors.black,
+    borderRadius: 14,
+    height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    shadowColor: colors.orange,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  primaryButtonPressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.98 }],
+  },
+  primaryButtonDimmed: {
+    opacity: 0.45,
+  },
+  primaryButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.white,
+  },
+  secondaryRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  retakeButton: {
+    flex: 1,
+    height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.paper100,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  retakeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.gray,
+  },
+  issueButton: {
+    height: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.red50,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.red,
+  },
+  issueButtonSmall: {
+    flex: 1,
+    height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.red50,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.red,
+  },
+  issueButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.red,
+  },
+
+  // 완료 상태 바
+  deliveredBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  deliveredBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  deliveredBadgeText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.green,
+  },
+  undoButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    minHeight: 40,
+    justifyContent: 'center',
+  },
+  undoText: {
+    fontSize: 13,
+    color: colors.gray,
+    fontWeight: '500',
+  },
+
+  // 이슈 카드 (신고 완료 상태)
+  issueCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  issueCopiedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.green50,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  issueCopiedText: {
+    fontSize: 12,
+    color: colors.green,
+    fontWeight: '600',
+    flex: 1,
+  },
+  issueActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  issueActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  issueActionBtnKakao: {
+    backgroundColor: '#FEE500',
+  },
+  issueActionBtnPhoto: {
+    backgroundColor: colors.paper100,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  issueActionEmoji: {
+    fontSize: 20,
+  },
+  issueActionLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.black,
+  },
+  issueActionSub: {
+    fontSize: 11,
+    color: '#666',
+    marginTop: 1,
+  },
+
+  // 쇼핑백 확인 오버레이
+  bagOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    zIndex: 100,
+  },
+  bagModal: {
+    backgroundColor: colors.white,
+    borderRadius: 24,
+    paddingVertical: 28,
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    gap: 12,
+    width: '100%',
+  },
+  bagModalIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#FFF3ED',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  bagModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.black,
+  },
+  bagModalMsg: {
+    fontSize: 14,
+    color: colors.gray,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  bagItemList: {
+    alignSelf: 'stretch',
+    backgroundColor: colors.paper50,
+    borderRadius: 10,
+    padding: 12,
+    gap: 6,
+  },
+  bagItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  bagItemName: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.black,
+    fontWeight: '500',
+  },
+  bagItemBags: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#C44A00',
+    fontVariant: ['tabular-nums'],
+  },
+  bagCheckRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    alignSelf: 'stretch',
+    paddingVertical: 4,
+  },
+  bagCheckBox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  bagCheckBoxChecked: {
+    borderColor: colors.green,
+    backgroundColor: colors.green,
+  },
+  bagCheckLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.black,
+    flex: 1,
+  },
+  bagModalBtns: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+    width: '100%',
+  },
+  bagModalCancel: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bagModalCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.gray,
+  },
+  bagModalConfirm: {
+    flex: 2,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: colors.black,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  bagModalConfirmDisabled: {
+    backgroundColor: colors.border,
+  },
+  bagModalConfirmText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.white,
+  },
+
+  // 이슈 신고 오버레이 — 흐름 안내
+  issueModalSteps: {
+    alignSelf: 'stretch',
+    backgroundColor: colors.paper50,
+    borderRadius: 10,
+    padding: 12,
+    gap: 8,
+  },
+  issueModalStep: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  issueModalStepNum: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.orange,
+    color: colors.white,
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  issueModalStepText: {
+    fontSize: 13,
+    color: colors.black,
+    fontWeight: '500',
+  },
+
+  // 이슈 신고 오버레이
+  issueOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    zIndex: 100,
+  },
+  issueModal: {
+    backgroundColor: colors.white,
+    borderRadius: 24,
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    gap: 10,
+    width: '100%',
+  },
+  issueModalIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: colors.red50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  issueModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.black,
+  },
+  issueModalMsg: {
+    fontSize: 14,
+    color: colors.gray,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  issueModalBtns: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+    width: '100%',
+  },
+  issueModalCancel: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  issueModalCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.gray,
+  },
+  issueModalConfirm: {
+    flex: 2,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: colors.red,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  issueModalConfirmText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.white,
+  },
+
+  // 완료 토스트
+  toast: {
+    position: 'absolute',
+    bottom: 100,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.black,
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  toastText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.white,
+  },
+  toastSub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.85)',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+
+  // 수량 불일치
+  qtyMismatchAdd: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  qtyMismatchAddText: {
+    fontSize: 11,
+    color: colors.gray,
+    fontWeight: '500',
+  },
+  qtyMismatchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 5,
+    backgroundColor: colors.red50,
+    borderRadius: 7,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: colors.red,
+    alignSelf: 'flex-start',
+  },
+  qtyMismatchText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.red,
+    fontVariant: ['tabular-nums'],
+  },
+  qtyMismatchEdit: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.orange,
+    marginLeft: 2,
+  },
+  qtyMismatchReset: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: colors.gray,
+  },
+  qtyEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    backgroundColor: colors.paper100,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderWidth: 1.5,
+    borderColor: colors.orange,
+    alignSelf: 'flex-start',
+  },
+  qtyEditLabel: {
+    fontSize: 11,
+    color: colors.gray,
+    fontWeight: '500',
+  },
+  qtyEditInput: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.black,
+    minWidth: 48,
+    maxWidth: 72,
+    textAlign: 'center',
+    paddingVertical: 0,
+    fontVariant: ['tabular-nums'],
+    borderBottomWidth: 1.5,
+    borderBottomColor: colors.orange,
+  },
+  qtyEditUnit: {
+    fontSize: 12,
+    color: colors.gray,
+    marginRight: 4,
+  },
+  qtyConfirmBtn: {
+    backgroundColor: colors.orange,
+    borderRadius: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  qtyConfirmText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.white,
+  },
+  qtyCancelBtn: {
+    padding: 4,
+  },
+
+  // 회수(pickup) 섹션
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  pickupCard: {
+    borderWidth: 1.5,
+    borderColor: '#B0B8FF',
+    backgroundColor: '#F8F9FF',
+  },
+  itemQtyWrap: {
+    alignItems: 'flex-end',
+  },
+  pickupIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#EEF0FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  pickupReason: {
+    fontSize: 11,
+    color: colors.blue,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  pickupDoneBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EEF0FF',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  pickupDoneText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.blue,
+  },
+  // 바텀 바 회수 버튼
+  pickupActionGroup: {
+    gap: 10,
+  },
+  pickupCollectButton: {
+    height: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.blue,
+    borderRadius: 14,
+  },
+  pickupCollectButtonSmall: {
+    height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#EEF0FF',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.blue,
+  },
+  pickupCollectButtonSmallText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.blue,
+  },
+  pickupDoneButton: {
+    height: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#EEF0FF',
+    borderRadius: 14,
+  },
+  pickupDoneButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.blue,
+  },
+  pickupDoneChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    backgroundColor: '#EEF0FF',
+    borderRadius: 10,
+  },
+  pickupDoneChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.blue,
+  },
+
+  // 회수 미완료
+  pickupIssueBadge: {
+    backgroundColor: colors.red50,
+    borderWidth: 1,
+    borderColor: colors.red,
+  },
+  pickupIssueText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.red,
+  },
+  pickupIssueButton: {
+    backgroundColor: colors.red50,
+    borderWidth: 1.5,
+    borderColor: colors.red,
+  },
+  pickupIssueChip: {
+    backgroundColor: colors.red50,
+    borderWidth: 1,
+    borderColor: colors.red,
+  },
+  pickupFailButton: {
+    height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.red50,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.red,
+  },
+  pickupFailButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.red,
+  },
+  pickupSmallRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  pickupFailButtonSmall: {
+    height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: colors.red50,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.red,
+  },
+  pickupFailButtonSmallText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.red,
+  },
+  pickupFailReasonBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    backgroundColor: colors.red50,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginHorizontal: 4,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.red,
+  },
+  pickupFailReasonText: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.red,
+    fontWeight: '500',
+    lineHeight: 17,
+  },
+  pickupFailInput: {
+    alignSelf: 'stretch',
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 14,
+    color: colors.black,
+    minHeight: 64,
+    backgroundColor: colors.paper50,
+    lineHeight: 20,
+  },
+
+  // 회수 미완료 사유 선택 (enum)
+  failKindGrid: {
+    alignSelf: 'stretch',
+    gap: 8,
+  },
+  failKindChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.paper50,
+    minHeight: 56,
+  },
+  failKindChipActive: {
+    borderColor: colors.red,
+    backgroundColor: colors.red50,
+  },
+  failKindRadio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  failKindRadioActive: {
+    borderColor: colors.red,
+  },
+  failKindRadioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.red,
+  },
+  failKindLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.black,
+  },
+  failKindHint: {
+    fontSize: 12,
+    color: colors.gray,
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  issueModalConfirmDisabled: {
+    opacity: 0.4,
+  },
+
+  // 회수 상품 메타 칩 (사유/예정조치/출고일)
+  pickupMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 4,
+  },
+  pickupMetaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  pickupMetaChipReason: {
+    backgroundColor: '#EEF0FF',
+  },
+  pickupMetaChipAction: {
+    backgroundColor: '#E7F5EC',
+  },
+  pickupMetaChipDate: {
+    backgroundColor: colors.paper100,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pickupMetaChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.black,
+  },
+  pickupMetaChipDateText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.gray,
+  },
+
+  // 기사 회수 메모 카드
+  pickupDriverNoteCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#F8F9FF',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#D5DAFF',
+  },
+  pickupDriverNoteText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.black,
+    lineHeight: 18,
+  },
+  pickupDriverNoteEdit: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.blue,
+    paddingTop: 1,
+  },
+  pickupDriverNoteEmpty: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D5DAFF',
+    borderStyle: 'dashed',
+    marginTop: 6,
+    alignSelf: 'flex-start',
+  },
+  pickupDriverNoteEmptyText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.blue,
+  },
+  pickupNoteEditCard: {
+    marginTop: 6,
+    borderWidth: 1.5,
+    borderColor: colors.blue,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: colors.white,
+  },
+
+  // 회수 배지 + 취소 버튼
+  pickupBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  pickupUndoTinyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: colors.paper100,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pickupUndoTinyText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.gray,
+  },
+  // 하단 chip 안의 취소 버튼 (chip 전체 tap도 됨, 시각적 affordance용)
+  pickupChipUndoBtn: {
+    marginLeft: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
+    backgroundColor: 'rgba(0,0,0,0.06)',
+  },
+  pickupChipUndoText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.gray,
+  },
+  // 배송 완료 확정 차단 안내
+  pickupBlockHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EEF0FF',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#B0B8FF',
+  },
+  pickupBlockHintText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.blue,
+  },
+
+  // 회수 완료/미완료 취소 popup (dashboard의 배송 완료 취소와 동일 스타일)
+  popupCard: {
+    backgroundColor: colors.white,
+    borderRadius: 24,
+    paddingVertical: 28,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    gap: 16,
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    elevation: 10,
+  },
+  undoPopupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    width: '100%',
+  },
+  undoPopupIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.glow100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  undoPopupHeaderText: {
+    flex: 1,
+    gap: 3,
+  },
+  undoPopupTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.black,
+    letterSpacing: -0.3,
+  },
+  undoPopupStoreName: {
+    fontSize: 13,
+    color: colors.gray,
+    fontWeight: '500',
+  },
+  undoSummaryBox: {
+    width: '100%',
+    backgroundColor: colors.paper50,
+    borderRadius: 12,
+    padding: 14,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  undoSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  undoSummaryLabel: {
+    fontSize: 12,
+    color: colors.gray,
+    width: 64,
+  },
+  undoSummaryValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.black,
+    flex: 1,
+  },
+  undoSummaryDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: 2,
+  },
+  undoSummaryItem: {
+    fontSize: 12,
+    color: colors.gray,
+    paddingLeft: 20,
+    lineHeight: 18,
+  },
+  undoSummaryMore: {
+    fontSize: 11,
+    color: colors.orange,
+    paddingLeft: 20,
+    fontWeight: '500',
+  },
+  undoReasonWrap: {
+    width: '100%',
+    gap: 6,
+  },
+  undoReasonLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.black,
+  },
+  undoReasonInput: {
+    backgroundColor: colors.paper50,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: colors.black,
+    minHeight: 72,
+    textAlignVertical: 'top',
+  },
+  undoReasonCount: {
+    fontSize: 11,
+    color: colors.gray,
+    alignSelf: 'flex-end',
+    fontVariant: ['tabular-nums'],
+  },
+  undoPopupBtns: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  undoPopupCancelBtn: {
+    flex: 1,
+    height: 52,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.paper100,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  undoPopupCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.gray,
+  },
+  undoPopupConfirmBtn: {
+    flex: 1,
+    height: 52,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.red,
+  },
+  undoPopupConfirmBtnDisabled: {
+    backgroundColor: colors.border,
+  },
+  undoPopupConfirmText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.white,
+  },
+});

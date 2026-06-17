@@ -1,0 +1,13 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "driver-app",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "web"],
+      "port": 8081,
+      "autoPort": true,
+      "cwd": "C:/Users/taeyo/dailyshot/driver-app"
+    }
+  ]
+}

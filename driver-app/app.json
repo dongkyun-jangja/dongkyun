@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "DDMS",
+    "slug": "ddms",
+    "scheme": "driver-app",
+    "version": "1.0.1",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F4F0EA"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "배송 완료 사진 촬영에 사용됩니다.",
+        "NSPhotoLibraryUsageDescription": "배송 사진을 저장하는 데 사용됩니다."
+      }
+    },
+    "android": {
+      "package": "com.dailyshot.ddms",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1E1E1E"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "배송 사진을 저장하는 데 사용됩니다.",
+          "cameraPermission": "배송 완료 사진 촬영에 사용됩니다."
+        }
+      ]
+    ],
+    "extra": {
+      "router": {}
+    }
+  }
+}
