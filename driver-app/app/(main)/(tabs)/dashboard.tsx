@@ -13,6 +13,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../../src/constants/colors';
 import { useDelivery } from '../../../src/context/DeliveryContext';
+import { useCancelLog } from '../../../src/hooks/useCancelLog';
 import { useKakaoChat } from '../../../src/hooks/useKakaoChat';
 import { usePushNotifications } from '../../../src/hooks/usePushNotifications';
 
@@ -58,9 +59,10 @@ export default function DashboardScreen() {
   const isFirstMount = useRef(true);
   const { openChat: openKakaoChat, isConfigured: isChatConfigured } = useKakaoChat();
   const { granted: pushGranted, loaded: pushLoaded } = usePushNotifications();
+  const { addCancelLog } = useCancelLog();
 
   const sortedStores = useMemo(
-    () => [...course.stores].sort((a, b) => a.order - b.order),
+    () => [...course.stores].filter((s) => !s.isCancelled).sort((a, b) => a.order - b.order),
     [course.stores],
   );
 
@@ -210,6 +212,22 @@ export default function DashboardScreen() {
                   ]}
                   onPress={() => {
                     if (!canConfirm) return;
+                    const now = new Date();
+                    const hh = now.getHours().toString().padStart(2, '0');
+                    const mm = now.getMinutes().toString().padStart(2, '0');
+                    addCancelLog({
+                      date: course.date,
+                      cancelledAt: `${hh}:${mm}`,
+                      driverId: course.driver.id,
+                      driverName: course.driver.name,
+                      distributorName: course.driver.distributorName,
+                      courseName: course.driver.courseName,
+                      storeId: targetStore.id,
+                      storeCode: targetStore.code,
+                      storeName: targetStore.name,
+                      originalDeliveredAt: targetStore.deliveredAt,
+                      reason: undoReason.trim(),
+                    });
                     updateStoreStatus(undoTarget, 'pending');
                     setUndoTarget(null);
                     setUndoReason('');
@@ -627,13 +645,13 @@ export default function DashboardScreen() {
             </View>
           )}
 
-          {/* ⑥ 오늘 전표 보기 */}
+          {/* ⑥ 오늘 배송 요약 */}
           <Pressable
             style={({ pressed }) => [styles.summaryBtn, pressed && { opacity: 0.88 }]}
             onPress={() => router.push('/(main)/today-summary' as any)}
           >
             <Ionicons name="document-text-outline" size={16} color={colors.black} />
-            <Text style={styles.summaryBtnText}>오늘 전표 보기</Text>
+            <Text style={styles.summaryBtnText}>오늘 배송 요약</Text>
             <Ionicons name="chevron-forward" size={14} color={colors.gray} />
           </Pressable>
 

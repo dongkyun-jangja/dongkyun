@@ -51,6 +51,7 @@ export interface Store {
   phone: string;
   memo?: string;      // 배송 메모 (상단 고정)
   status: DeliveryStatus;
+  isCancelled?: boolean; // 이슈 후 취소처리 — 활성 목록에서 숨김, 이력엔 issue로 유지
   order: number;      // 배송 순서 (1부터)
   items: DeliveryItem[];
   photoUris?: string[];   // 최대 3장, 최소 1장 (delivered 상태)
@@ -77,4 +78,20 @@ export interface Course {
   date: string; // 'YYYY-MM-DD'
   driver: Driver;
   stores: Store[];
+}
+
+// 배송 완료 취소 이력 — 기사 행동 로그 (배송 데이터와 별도 저장)
+export interface CancelLog {
+  id: string;                  // 고유 ID (date + storeId)
+  date: string;                // 취소 발생 날짜 'YYYY-MM-DD'
+  cancelledAt: string;         // 취소 시각 'HH:MM'
+  driverId: string;
+  driverName: string;
+  distributorName: string;     // 소속 도매상
+  courseName: string;          // 코스명
+  storeId: string;
+  storeCode: string;
+  storeName: string;
+  originalDeliveredAt?: string; // 원래 완료 처리 시각 'HH:MM'
+  reason: string;              // 기사가 입력한 취소 사유
 }

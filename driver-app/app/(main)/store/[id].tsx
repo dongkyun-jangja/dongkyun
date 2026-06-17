@@ -449,7 +449,7 @@ const PickupItemRow = React.memo(function PickupItemRow({
 
 export default function StoreDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { course, updateStoreStatus, addStorePhoto, removeStorePhoto, updateDriverNote, updateItemQuantity, updateItemBags, updatePickupStatus, updatePickupItemQuantity, updatePickupDriverNote } = useDelivery();
+  const { course, updateStoreStatus, addStorePhoto, removeStorePhoto, updateDriverNote, updateItemQuantity, updateItemBags, updatePickupStatus, updatePickupItemQuantity, updatePickupDriverNote, resetIssueStore, cancelStore } = useDelivery();
   const router = useRouter();
   const { openChat: openKakaoChat } = useKakaoChat();
   const insets = useSafeAreaInsets();
@@ -464,6 +464,8 @@ export default function StoreDetailScreen() {
   // 이슈 신고 확인 오버레이 (Alert 대신 Expo Web 호환)
   const [showIssueConfirm, setShowIssueConfirm] = useState(false);
   const [issueCopied, setIssueCopied] = useState(false);
+  // 이슈 초기화 모달
+  const [showIssueResetModal, setShowIssueResetModal] = useState(false);
   // 회수 미완료 오버레이
   const [showPickupFailConfirm, setShowPickupFailConfirm] = useState(false);
   const [pickupFailDraft, setPickupFailDraft] = useState('');
@@ -1310,7 +1312,72 @@ export default function StoreDetailScreen() {
                 </Pressable>
               )}
             </View>
+
+            {/* 이슈 초기화 버튼 */}
+            <Pressable
+              style={({ pressed }) => [styles.issueResetBtn, pressed && { opacity: 0.75 }]}
+              onPress={() => setShowIssueResetModal(true)}
+            >
+              <Ionicons name="refresh-circle-outline" size={18} color={colors.gray} />
+              <Text style={styles.issueResetBtnText}>이슈 초기화</Text>
+            </Pressable>
           </View>
+        )}
+
+        {/* 이슈 초기화 모달 */}
+        {showIssueResetModal && (
+          <Modal visible transparent animationType="fade" onRequestClose={() => setShowIssueResetModal(false)}>
+            <Pressable style={styles.issueOverlay} onPress={() => setShowIssueResetModal(false)}>
+              <Pressable style={styles.issueResetModal} onPress={(e) => e.stopPropagation()}>
+                <View style={styles.issueResetModalIcon}>
+                  <Ionicons name="refresh-circle" size={36} color={colors.orange} />
+                </View>
+                <Text style={styles.issueResetModalTitle}>이슈를 어떻게 처리할까요?</Text>
+                <Text style={styles.issueResetModalDesc}>
+                  채팅방에서 담당자 확인이 완료된 경우{'\n'}아래 옵션 중 하나를 선택해 주세요.
+                </Text>
+
+                {/* 옵션 1: 다시 배송 */}
+                <Pressable
+                  style={({ pressed }) => [styles.issueResetOption, styles.issueResetOptionPrimary, pressed && { opacity: 0.85 }]}
+                  onPress={() => {
+                    setShowIssueResetModal(false);
+                    resetIssueStore(store.id);
+                  }}
+                >
+                  <View style={styles.issueResetOptionIcon}>
+                    <Ionicons name="arrow-undo" size={22} color={colors.white} />
+                  </View>
+                  <View style={styles.issueResetOptionBody}>
+                    <Text style={styles.issueResetOptionTitle}>다시 배송하기</Text>
+                    <Text style={styles.issueResetOptionSub}>이슈 해제 후 배송 완료 처리를 진행합니다</Text>
+                  </View>
+                </Pressable>
+
+                {/* 옵션 2: 취소 처리 */}
+                <Pressable
+                  style={({ pressed }) => [styles.issueResetOption, styles.issueResetOptionCancel, pressed && { opacity: 0.85 }]}
+                  onPress={() => {
+                    setShowIssueResetModal(false);
+                    cancelStore(store.id);
+                    router.back();
+                  }}
+                >
+                  <View style={[styles.issueResetOptionIcon, { backgroundColor: colors.red + '20' }]}>
+                    <Ionicons name="close-circle" size={22} color={colors.red} />
+                  </View>
+                  <View style={styles.issueResetOptionBody}>
+                    <Text style={[styles.issueResetOptionTitle, { color: colors.red }]}>취소 처리하기</Text>
+                    <Text style={styles.issueResetOptionSub}>오늘 목록에서 제거됩니다. 이력에는 이슈로 남습니다.</Text>
+                  </View>
+                </Pressable>
+
+                <Pressable style={styles.issueResetCancelBtn} onPress={() => setShowIssueResetModal(false)}>
+                  <Text style={styles.issueResetCancelBtnText}>닫기</Text>
+                </Pressable>
+              </Pressable>
+            </Pressable>
+          </Modal>
         )}
 
         <View style={{ height: 100 }} />
@@ -2661,6 +2728,99 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#666',
     marginTop: 1,
+  },
+
+  // 이슈 초기화 버튼
+  issueResetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper50 ?? colors.paper100,
+  },
+  issueResetBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.gray,
+  },
+  // 이슈 초기화 모달
+  issueResetModal: {
+    backgroundColor: colors.white,
+    borderRadius: 20,
+    padding: 24,
+    marginHorizontal: 24,
+    alignItems: 'center',
+  },
+  issueResetModalIcon: {
+    marginBottom: 12,
+  },
+  issueResetModalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: colors.black,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  issueResetModalDesc: {
+    fontSize: 13,
+    color: colors.gray,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  issueResetOption: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 10,
+  },
+  issueResetOptionPrimary: {
+    backgroundColor: colors.orange,
+  },
+  issueResetOptionCancel: {
+    backgroundColor: colors.white,
+    borderWidth: 1.5,
+    borderColor: colors.red,
+  },
+  issueResetOptionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  issueResetOptionBody: {
+    flex: 1,
+  },
+  issueResetOptionTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.white,
+    marginBottom: 2,
+  },
+  issueResetOptionSub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.85)',
+    lineHeight: 16,
+  },
+  issueResetCancelBtn: {
+    marginTop: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+  },
+  issueResetCancelBtnText: {
+    fontSize: 14,
+    color: colors.gray,
+    fontWeight: '600',
   },
 
   // 쇼핑백 확인 오버레이

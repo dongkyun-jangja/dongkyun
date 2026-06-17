@@ -38,6 +38,8 @@ interface DeliveryContextType {
   ) => void;
   updatePickupItemQuantity: (storeId: string, itemCode: string, actualQty: number | null) => void;
   updatePickupDriverNote: (storeId: string, note: string) => void;
+  resetIssueStore: (storeId: string) => void;  // 이슈 → 대기(다시 배송)
+  cancelStore: (storeId: string) => void;      // 이슈 → 취소(목록에서 숨김, 이력은 이슈 유지)
 }
 
 const DeliveryContext = createContext<DeliveryContextType | null>(null);
@@ -446,6 +448,42 @@ export function DeliveryProvider({ children }: { children: React.ReactNode }) {
     [dateIndex],
   );
 
+  const resetIssueStore = useCallback(
+    (storeId: string) => {
+      setCourses((prev) =>
+        prev.map((c, idx) => {
+          if (idx !== dateIndex) return c;
+          return {
+            ...c,
+            stores: c.stores.map((s) =>
+              s.id === storeId
+                ? { ...s, status: 'pending', isCancelled: false, photoUris: [], deliveredAt: undefined }
+                : s,
+            ),
+          };
+        }),
+      );
+    },
+    [dateIndex],
+  );
+
+  const cancelStore = useCallback(
+    (storeId: string) => {
+      setCourses((prev) =>
+        prev.map((c, idx) => {
+          if (idx !== dateIndex) return c;
+          return {
+            ...c,
+            stores: c.stores.map((s) =>
+              s.id === storeId ? { ...s, status: 'issue', isCancelled: true } : s,
+            ),
+          };
+        }),
+      );
+    },
+    [dateIndex],
+  );
+
   return (
     <DeliveryContext.Provider
       value={{
@@ -472,6 +510,8 @@ export function DeliveryProvider({ children }: { children: React.ReactNode }) {
         updatePickupStatus,
         updatePickupItemQuantity,
         updatePickupDriverNote,
+        resetIssueStore,
+        cancelStore,
         resetTodayCourse,
       }}
     >

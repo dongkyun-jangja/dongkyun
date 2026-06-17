@@ -301,7 +301,7 @@ export default function DeliveriesScreen() {
   }, []);
 
   const sortedStores = useMemo(
-    () => [...course.stores].sort((a, b) => a.order - b.order),
+    () => [...course.stores].filter((s) => !s.isCancelled).sort((a, b) => a.order - b.order),
     [course.stores],
   );
 

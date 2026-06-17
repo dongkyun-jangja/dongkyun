@@ -437,7 +437,7 @@ export default function TodaySummaryScreen() {
           <Ionicons name="chevron-back" size={18} color={colors.orange} />
           <Text style={styles.backBtnText}>홈</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>오늘 전표</Text>
+        <Text style={styles.headerTitle}>오늘 배송 요약</Text>
         <Pressable
           style={({ pressed }) => [styles.shareIconBtn, pressed && { opacity: 0.6 }]}
           onPress={handleShareToKakao}
