@@ -475,7 +475,7 @@ export default function SplitDeliveryScreen() {
           onPress={() => router.replace('/(main)/(tabs)/dashboard')}
           hitSlop={8}
         >
-          <Ionicons name="chevron-back" size={16} color={colors.white} />
+          <Ionicons name="chevron-back" size={18} color={colors.white} />
           <Text style={styles.backBtnText}>홈</Text>
         </Pressable>
         <View style={styles.headerCenter}>
@@ -539,8 +539,8 @@ export default function SplitDeliveryScreen() {
 const styles = StyleSheet.create({
   container:    { flex: 1, backgroundColor: colors.paper100 },
   header:       { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.black, paddingHorizontal: 12, paddingVertical: 10 },
-  backBtn:      { flexDirection: 'row', alignItems: 'center', gap: 2, paddingVertical: 4, paddingHorizontal: 4 },
-  backBtnText:  { color: colors.white, fontSize: 13, fontWeight: '600' },
+  backBtn:      { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.orange, paddingVertical: 5, paddingHorizontal: 10, borderRadius: 20 },
+  backBtnText:  { color: colors.white, fontSize: 16, fontWeight: '700' },
   headerCenter: { flex: 1, alignItems: 'center' },
   headerTitle:  { color: colors.white, fontSize: 15, fontWeight: '700' },
   headerSub:    { color: colors.gray, fontSize: 11, marginTop: 1 },
