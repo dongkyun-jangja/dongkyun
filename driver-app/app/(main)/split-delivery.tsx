@@ -428,13 +428,17 @@ export default function SplitDeliveryScreen() {
   const handleDelivered = useCallback(
     (id: string, photos: string[]) => {
       updateStoreStatus(id, 'delivered', photos);
-      // 다음 대기 매장으로 자동 이동
       const nextPending = sortedStores.find(
         (s) => s.status === 'pending' && s.id !== id,
       );
-      if (nextPending) setSelectedId(nextPending.id);
+      if (nextPending) {
+        setSelectedId(nextPending.id);
+      } else {
+        // 모든 배송 완료 → 대시보드로 자동 이동
+        router.replace('/(main)/(tabs)/dashboard');
+      }
     },
-    [updateStoreStatus, sortedStores],
+    [updateStoreStatus, sortedStores, router],
   );
 
   const handleIssue = useCallback(
@@ -443,9 +447,13 @@ export default function SplitDeliveryScreen() {
       const nextPending = sortedStores.find(
         (s) => s.status === 'pending' && s.id !== id,
       );
-      if (nextPending) setSelectedId(nextPending.id);
+      if (nextPending) {
+        setSelectedId(nextPending.id);
+      } else {
+        router.replace('/(main)/(tabs)/dashboard');
+      }
     },
-    [updateStoreStatus, sortedStores],
+    [updateStoreStatus, sortedStores, router],
   );
 
   if (!selectedStore) {
@@ -467,7 +475,8 @@ export default function SplitDeliveryScreen() {
           onPress={() => router.replace('/(main)/(tabs)/dashboard')}
           hitSlop={8}
         >
-          <Ionicons name="chevron-back" size={20} color={colors.white} />
+          <Ionicons name="chevron-back" size={16} color={colors.white} />
+          <Text style={styles.backBtnText}>홈</Text>
         </Pressable>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>오늘 배송</Text>
@@ -530,7 +539,8 @@ export default function SplitDeliveryScreen() {
 const styles = StyleSheet.create({
   container:    { flex: 1, backgroundColor: colors.paper100 },
   header:       { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.black, paddingHorizontal: 12, paddingVertical: 10 },
-  backBtn:      { width: 36, alignItems: 'flex-start' },
+  backBtn:      { flexDirection: 'row', alignItems: 'center', gap: 2, paddingVertical: 4, paddingHorizontal: 4 },
+  backBtnText:  { color: colors.white, fontSize: 13, fontWeight: '600' },
   headerCenter: { flex: 1, alignItems: 'center' },
   headerTitle:  { color: colors.white, fontSize: 15, fontWeight: '700' },
   headerSub:    { color: colors.gray, fontSize: 11, marginTop: 1 },
