@@ -455,9 +455,9 @@ export default function StoreDetailScreen() {
   const insets = useSafeAreaInsets();
 
   // 촬영 후 아직 확정 전 임시 사진 (pending 상태에서만 사용)
-  const [pendingPhotos, setPendingPhotos] = useState<string[]>([
-    'https://picsum.photos/seed/delivery/400/300',
-  ]);
+  const [pendingPhotos, setPendingPhotos] = useState<string[]>([]);
+  // 배송 완료 확인 팝업
+  const [showDeliveryConfirm, setShowDeliveryConfirm] = useState(false);
   // 특이사항 편집 상태
   const [noteEditing, setNoteEditing] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
@@ -1380,6 +1380,38 @@ export default function StoreDetailScreen() {
           </Modal>
         )}
 
+        {/* 배송 완료 확인 팝업 */}
+        {showDeliveryConfirm && (
+          <Modal visible transparent animationType="fade" onRequestClose={() => setShowDeliveryConfirm(false)}>
+            <Pressable style={styles.issueOverlay} onPress={() => setShowDeliveryConfirm(false)}>
+              <Pressable style={styles.issueResetModal} onPress={(e) => e.stopPropagation()}>
+                <View style={styles.issueResetModalIcon}>
+                  <Ionicons name="checkmark-circle" size={36} color={colors.green} />
+                </View>
+                <Text style={styles.issueResetModalTitle}>배송을 완료 처리할까요?</Text>
+                <Text style={styles.issueResetModalDesc}>
+                  {store.name}{'\n'}사진 {pendingPhotos.length}장 첨부됨
+                </Text>
+                <Pressable
+                  style={({ pressed }) => [styles.issueResetOption, styles.issueResetOptionPrimary, pressed && { opacity: 0.85 }]}
+                  onPress={() => { setShowDeliveryConfirm(false); handleConfirmDelivery(); }}
+                >
+                  <View style={styles.issueResetOptionIcon}>
+                    <Ionicons name="checkmark" size={22} color={colors.white} />
+                  </View>
+                  <View style={styles.issueResetOptionBody}>
+                    <Text style={styles.issueResetOptionTitle}>완료 확정</Text>
+                    <Text style={styles.issueResetOptionSub}>배송 완료로 처리하고 다음 매장으로 이동합니다</Text>
+                  </View>
+                </Pressable>
+                <Pressable style={styles.issueResetCancelBtn} onPress={() => setShowDeliveryConfirm(false)}>
+                  <Text style={styles.issueResetCancelBtnText}>취소</Text>
+                </Pressable>
+              </Pressable>
+            </Pressable>
+          </Modal>
+        )}
+
         <View style={{ height: 100 }} />
       </ScrollView>
 
@@ -1496,7 +1528,7 @@ export default function StoreDetailScreen() {
                 !canConfirmDelivery && styles.primaryButtonDimmed,
                 pressed && canConfirmDelivery && styles.primaryButtonPressed,
               ]}
-              onPress={canConfirmDelivery ? handleConfirmDelivery : undefined}
+              onPress={canConfirmDelivery ? () => setShowDeliveryConfirm(true) : undefined}
             >
               <Ionicons name="checkmark-circle" size={22} color={colors.white} />
               <Text style={styles.primaryButtonText}>배송 완료 확정</Text>

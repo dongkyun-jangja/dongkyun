@@ -42,9 +42,18 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="deliveries"
+        options={{
+          title: '오늘 목록',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="list" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="history"
         options={{
-          title: '배송 기록',
+          title: '요일별 기록',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="calendar" size={size} color={color} />
           ),
@@ -60,11 +69,6 @@ export default function TabsLayout() {
             <Ionicons name="megaphone" size={size} color={color} />
           ),
         }}
-      />
-      {/* deliveries는 탭으로 노출하지 않고 스택으로만 접근 */}
-      <Tabs.Screen
-        name="deliveries"
-        options={{ href: null }}
       />
     </Tabs>
   );
