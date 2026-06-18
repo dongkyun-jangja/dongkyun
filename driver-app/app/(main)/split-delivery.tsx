@@ -21,7 +21,7 @@ import { useDelivery } from '../../src/context/DeliveryContext';
 import { Store } from '../../src/types';
 
 const { height: SCREEN_H } = Dimensions.get('window');
-const TOP_RATIO = 0.58; // 상단 목록 비율
+const TOP_RATIO = 0.50; // 상단 목록 비율
 
 // ─── 상단 목록 아이템 ────────────────────────────────────────────────────
 function ListItem({
@@ -551,7 +551,7 @@ const styles = StyleSheet.create({
   listBadgeText:{ fontSize: 11, fontWeight: '600' },
 
   // 구분선
-  divider:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.black, paddingHorizontal: 14, paddingVertical: 9, borderTopWidth: 2, borderTopColor: colors.orange },
+  divider:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.black, paddingHorizontal: 14, paddingVertical: 9, borderTopWidth: 5, borderTopColor: colors.orange, shadowColor: colors.black, shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.25, shadowRadius: 6, elevation: 8 },
   dividerLabel: { fontSize: 12, fontWeight: '700', color: colors.white },
 
   // 하단 패널
