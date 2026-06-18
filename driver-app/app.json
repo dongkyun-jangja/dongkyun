@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "DDMS",
+    "name": "DDMS v2",
     "slug": "ddms",
     "scheme": "driver-app",
     "version": "1.0.1",
@@ -21,7 +21,7 @@
       }
     },
     "android": {
-      "package": "com.dailyshot.ddms",
+      "package": "com.dailyshot.ddms.v2",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1E1E1E"
