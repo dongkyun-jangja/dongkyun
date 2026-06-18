@@ -441,7 +441,7 @@ export default function CourseConfirmScreen() {
                     setIsConfirming(true);
                     confirmCourse();
                     if (firstPending) {
-                      router.replace(`/(main)/store/${firstPending.id}` as any);
+                      router.replace(`/(main)/split-delivery?storeId=${firstPending.id}` as any);
                     } else {
                       router.replace('/(main)/(tabs)/dashboard');
                     }

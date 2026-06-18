@@ -513,7 +513,7 @@ export default function DashboardScreen() {
                 styles.nextCard,
                 pressed && { opacity: 0.92, transform: [{ scale: 0.96 }] },
               ]}
-              onPress={() => router.push(`/(main)/store/${nextStore.id}`)}
+              onPress={() => router.push(`/(main)/split-delivery?storeId=${nextStore.id}` as any)}
             >
               <View style={styles.nextHeader}>
                 <View style={styles.nextBadge}>
