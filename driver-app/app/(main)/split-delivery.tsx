@@ -90,13 +90,18 @@ function StorePanel({
   onIssue: (storeId: string) => void;
 }) {
   const [pendingPhotos, setPendingPhotos] = useState<string[]>([]);
+  const [pendingBagPhotos, setPendingBagPhotos] = useState<string[]>([]);
   const [showConfirm, setShowConfirm] = useState(false);
   const prevStoreId = useRef(store.id);
+
+  const totalBags = store.items.reduce((s, i) => s + (i.bags ?? 0), 0);
+  const needsBagPhoto = totalBags > 0;
 
   // 매장 바뀌면 임시 사진 초기화
   if (prevStoreId.current !== store.id) {
     prevStoreId.current = store.id;
     if (pendingPhotos.length > 0) setPendingPhotos([]);
+    if (pendingBagPhotos.length > 0) setPendingBagPhotos([]);
   }
 
   const openCamera = useCallback(async (): Promise<string | null> => {
@@ -128,10 +133,25 @@ function StorePanel({
     setPendingPhotos((prev) => [...prev, uri]);
   }, [openCamera, pendingPhotos.length]);
 
+  const handleTakeBagPhoto = useCallback(async () => {
+    const uri = await openCamera();
+    if (!uri) return;
+    setPendingBagPhotos([uri]);
+  }, [openCamera]);
+
+  const handleAddBagPhoto = useCallback(async () => {
+    if (pendingBagPhotos.length >= 3) return;
+    const uri = await openCamera();
+    if (!uri) return;
+    setPendingBagPhotos((prev) => [...prev, uri]);
+  }, [openCamera, pendingBagPhotos.length]);
+
   const isPending = store.status === 'pending';
   const isDelivered = store.status === 'delivered';
   const isIssue = store.status === 'issue';
   const hasPendingPhotos = pendingPhotos.length > 0;
+  const hasBagPhotos = pendingBagPhotos.length > 0;
+  const canConfirm = hasPendingPhotos && (!needsBagPhoto || hasBagPhotos);
 
   return (
     <View style={styles.panel}>
@@ -169,7 +189,6 @@ function StorePanel({
 
         {/* 배송 상품 목록 */}
         {store.items.length > 0 && (() => {
-          const totalBags = store.items.reduce((s, i) => s + (i.bags ?? 0), 0);
           const hasBlack = store.items.some((i) => i.isBlack);
           return (
             <>
@@ -181,14 +200,7 @@ function StorePanel({
               )}
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>배송 상품</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  {totalBags > 0 && (
-                    <View style={styles.bagChip}>
-                      <Text style={styles.bagChipText}>🛍 쇼핑백 {totalBags}개</Text>
-                    </View>
-                  )}
-                  <Text style={styles.sectionCount}>{store.items.length}종</Text>
-                </View>
+                <Text style={styles.sectionCount}>{store.items.length}종</Text>
               </View>
               <View style={styles.itemCard}>
                 {store.items.map((item, idx) => {
@@ -206,11 +218,6 @@ function StorePanel({
                           )}
                         </View>
                         <Text style={styles.itemCode}>#{item.code}</Text>
-                        {(item.bags ?? 0) > 0 && (
-                          <View style={styles.itemBagChip}>
-                            <Text style={styles.itemBagChipText}>🛍 쇼핑백 {item.bags}개</Text>
-                          </View>
-                        )}
                         {item.itemNote ? (
                           <Text style={styles.itemNote}>{item.itemNote}</Text>
                         ) : null}
@@ -223,6 +230,29 @@ function StorePanel({
                   );
                 })}
               </View>
+
+              {/* 쇼핑백 — 별도 항목 */}
+              {totalBags > 0 && (
+                <>
+                  <View style={styles.sectionHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={styles.sectionTitle}>쇼핑백</Text>
+                    </View>
+                    <Text style={styles.sectionCount}>별도 상품</Text>
+                  </View>
+                  <View style={[styles.itemCard, styles.bagItemCard]}>
+                    <View style={styles.itemRow}>
+                      <View style={styles.itemLeft}>
+                        <Text style={styles.itemName}>쇼핑백</Text>
+                        <Text style={styles.itemCode}>고객 별도 구매 — 누락 주의</Text>
+                      </View>
+                      <View style={styles.itemRight}>
+                        <Text style={[styles.itemQty, { color: colors.orange }]}>{totalBags}개</Text>
+                      </View>
+                    </View>
+                  </View>
+                </>
+              )}
             </>
           );
         })()}
@@ -274,12 +304,12 @@ function StorePanel({
           </View>
         )}
 
-        {/* 임시 사진 영역 — 사진 찍은 후 */}
+        {/* 상품 사진 */}
         {isPending && hasPendingPhotos && (
           <View style={styles.photoCard}>
             <View style={styles.photoHeader}>
               <Ionicons name="camera" size={14} color={colors.orange} />
-              <Text style={styles.photoTitle}>촬영된 사진</Text>
+              <Text style={styles.photoTitle}>상품 사진</Text>
               <Text style={styles.photoCount}>{pendingPhotos.length}/3장</Text>
             </View>
             <View style={styles.photoGrid}>
@@ -302,6 +332,46 @@ function StorePanel({
                 </Pressable>
               )}
             </View>
+          </View>
+        )}
+
+        {/* 쇼핑백 사진 */}
+        {isPending && needsBagPhoto && hasPendingPhotos && (
+          <View style={[styles.photoCard, !hasBagPhotos && styles.photoCardRequired]}>
+            <View style={styles.photoHeader}>
+              <Ionicons name="bag-handle" size={14} color={hasBagPhotos ? colors.orange : colors.red} />
+              <Text style={[styles.photoTitle, !hasBagPhotos && { color: colors.red }]}>
+                쇼핑백 사진{!hasBagPhotos ? ' (필수)' : ''}
+              </Text>
+              {hasBagPhotos && <Text style={styles.photoCount}>{pendingBagPhotos.length}/3장</Text>}
+            </View>
+            {!hasBagPhotos ? (
+              <Pressable style={styles.bagPhotoPrompt} onPress={handleTakeBagPhoto}>
+                <Ionicons name="camera-outline" size={20} color={colors.red} />
+                <Text style={styles.bagPhotoPromptText}>쇼핑백 {totalBags}개를 함께 촬영해 주세요</Text>
+              </Pressable>
+            ) : (
+              <View style={styles.photoGrid}>
+                {pendingBagPhotos.map((uri, idx) => (
+                  <View key={idx} style={styles.photoThumbWrap}>
+                    <Image source={{ uri }} style={styles.photoThumb} resizeMode="cover" />
+                    <Pressable
+                      style={styles.photoDelBtn}
+                      onPress={() => setPendingBagPhotos((p) => p.filter((_, i) => i !== idx))}
+                      hitSlop={4}
+                    >
+                      <Ionicons name="close-circle" size={18} color={colors.red} />
+                    </Pressable>
+                  </View>
+                ))}
+                {pendingBagPhotos.length < 3 && (
+                  <Pressable style={styles.photoAddBtn} onPress={handleAddBagPhoto}>
+                    <Ionicons name="camera-outline" size={20} color={colors.orange} />
+                    <Text style={styles.photoAddText}>추가</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
           </View>
         )}
 
@@ -338,7 +408,26 @@ function StorePanel({
                 <Text style={styles.issueBtnText}>이슈 신고</Text>
               </Pressable>
             </>
+          ) : !canConfirm ? (
+            /* 상품 사진 있음, 쇼핑백 사진 아직 없음 */
+            <>
+              <Pressable style={styles.bagPhotoBtn} onPress={handleTakeBagPhoto}>
+                <Ionicons name="bag-handle" size={18} color={colors.white} />
+                <Text style={styles.primaryBtnText}>쇼핑백 사진 촬영하기</Text>
+              </Pressable>
+              <View style={styles.secondaryRow}>
+                <Pressable style={styles.retakeBtn} onPress={handleTakePhoto}>
+                  <Ionicons name="camera-outline" size={14} color={colors.gray} />
+                  <Text style={styles.retakeBtnText}>상품 다시 찍기</Text>
+                </Pressable>
+                <Pressable style={styles.issueBtn} onPress={() => onIssue(store.id)}>
+                  <Ionicons name="alert-circle-outline" size={14} color={colors.red} />
+                  <Text style={styles.issueBtnText}>이슈 신고</Text>
+                </Pressable>
+              </View>
+            </>
           ) : (
+            /* 모든 사진 완료 */
             <>
               <Pressable
                 style={styles.primaryBtn}
@@ -370,7 +459,9 @@ function StorePanel({
               <Ionicons name="checkmark-circle" size={36} color={colors.green} />
               <Text style={styles.confirmTitle}>배송을 완료 처리할까요?</Text>
               <Text style={styles.confirmDesc}>
-                {store.name}{'\n'}사진 {pendingPhotos.length}장 첨부됨
+                {store.name}{'\n'}
+                상품 사진 {pendingPhotos.length}장
+                {needsBagPhoto ? `  |  쇼핑백 사진 ${pendingBagPhotos.length}장` : ''}
               </Text>
               <Pressable
                 style={styles.confirmBtn}
@@ -594,10 +685,11 @@ const styles = StyleSheet.create({
   blackBadgeText:{ fontSize: 10, fontWeight: '700', color: '#FFD700' },
 
   // 쇼핑백
-  bagChip:      { backgroundColor: colors.orange + '22', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
-  bagChipText:  { fontSize: 11, fontWeight: '600', color: colors.orange },
-  itemBagChip:  { marginTop: 3, alignSelf: 'flex-start', backgroundColor: colors.orange + '18', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  itemBagChipText: { fontSize: 10, color: colors.orange, fontWeight: '600' },
+  bagItemCard:       { borderWidth: 1.5, borderColor: colors.orange + '55' },
+  photoCardRequired: { borderWidth: 1.5, borderColor: colors.red + '60' },
+  bagPhotoPrompt:    { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.red + '10', borderRadius: 8, padding: 12 },
+  bagPhotoPromptText:{ fontSize: 13, color: colors.red, flex: 1 },
+  bagPhotoBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.red, borderRadius: 12, paddingVertical: 14, marginBottom: 6 },
 
   // 상품명 행
   itemNameRow:  { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
