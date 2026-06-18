@@ -21,7 +21,7 @@ import { useDelivery } from '../../src/context/DeliveryContext';
 import { Store } from '../../src/types';
 
 const { height: SCREEN_H } = Dimensions.get('window');
-const TOP_RATIO = 0.42; // 상단 목록 비율
+const TOP_RATIO = 0.58; // 상단 목록 비율
 
 // ─── 상단 목록 아이템 ────────────────────────────────────────────────────
 function ListItem({
@@ -168,35 +168,64 @@ function StorePanel({
         </View>
 
         {/* 배송 상품 목록 */}
-        {store.items.length > 0 && (
-          <>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>배송 상품</Text>
-              <Text style={styles.sectionCount}>{store.items.length}종</Text>
-            </View>
-            <View style={styles.itemCard}>
-              {store.items.map((item, idx) => {
-                const boxes = Math.floor(item.quantity / item.boxUnit);
-                const isLast = idx === store.items.length - 1;
-                return (
-                  <View key={item.code} style={[styles.itemRow, !isLast && styles.itemBorder]}>
-                    <View style={styles.itemLeft}>
-                      <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
-                      <Text style={styles.itemCode}>#{item.code}</Text>
-                      {item.itemNote ? (
-                        <Text style={styles.itemNote}>{item.itemNote}</Text>
-                      ) : null}
+        {store.items.length > 0 && (() => {
+          const totalBags = store.items.reduce((s, i) => s + (i.bags ?? 0), 0);
+          const hasBlack = store.items.some((i) => i.isBlack);
+          return (
+            <>
+              {hasBlack && (
+                <View style={styles.blackBanner}>
+                  <Ionicons name="diamond" size={13} color="#FFD700" />
+                  <Text style={styles.blackBannerText}>블랙멤버십 상품 포함 — 픽업 매장 인계 시 우선 처리해 주세요</Text>
+                </View>
+              )}
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>배송 상품</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  {totalBags > 0 && (
+                    <View style={styles.bagChip}>
+                      <Text style={styles.bagChipText}>🛍 쇼핑백 {totalBags}개</Text>
                     </View>
-                    <View style={styles.itemRight}>
-                      <Text style={styles.itemQty}>{boxes}박스</Text>
-                      <Text style={styles.itemQtySub}>{item.quantity}개</Text>
+                  )}
+                  <Text style={styles.sectionCount}>{store.items.length}종</Text>
+                </View>
+              </View>
+              <View style={styles.itemCard}>
+                {store.items.map((item, idx) => {
+                  const boxes = Math.floor(item.quantity / item.boxUnit);
+                  const isLast = idx === store.items.length - 1;
+                  return (
+                    <View key={item.code} style={[styles.itemRow, !isLast && styles.itemBorder]}>
+                      <View style={styles.itemLeft}>
+                        <View style={styles.itemNameRow}>
+                          <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                          {item.isBlack && (
+                            <View style={styles.blackBadge}>
+                              <Text style={styles.blackBadgeText}>블랙</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.itemCode}>#{item.code}</Text>
+                        {(item.bags ?? 0) > 0 && (
+                          <View style={styles.itemBagChip}>
+                            <Text style={styles.itemBagChipText}>🛍 쇼핑백 {item.bags}개</Text>
+                          </View>
+                        )}
+                        {item.itemNote ? (
+                          <Text style={styles.itemNote}>{item.itemNote}</Text>
+                        ) : null}
+                      </View>
+                      <View style={styles.itemRight}>
+                        <Text style={styles.itemQty}>{boxes}박스</Text>
+                        <Text style={styles.itemQtySub}>{item.quantity}개</Text>
+                      </View>
                     </View>
-                  </View>
-                );
-              })}
-            </View>
-          </>
-        )}
+                  );
+                })}
+              </View>
+            </>
+          );
+        })()}
 
         {/* 회수 상품 */}
         {(store.pickupItems?.length ?? 0) > 0 && (
@@ -229,6 +258,20 @@ function StorePanel({
               })}
             </View>
           </>
+        )}
+
+        {/* 특이사항 */}
+        {isPending && (
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>특이사항</Text>
+          </View>
+        )}
+        {isPending && (
+          <View style={styles.noteCard}>
+            <Text style={styles.noteText}>
+              {store.driverNote ? store.driverNote : '특이사항 없음 — 탭하여 추가'}
+            </Text>
+          </View>
         )}
 
         {/* 임시 사진 영역 — 사진 찍은 후 */}
@@ -464,11 +507,10 @@ export default function SplitDeliveryScreen() {
 
       {/* 구분선 */}
       <View style={styles.divider}>
-        <View style={styles.dividerHandle} />
         <Text style={styles.dividerLabel}>
           {selectedStore.order}번  {selectedStore.name}
         </Text>
-        <View style={styles.dividerHandle} />
+        <Ionicons name="chevron-down" size={13} color={colors.orange} />
       </View>
 
       {/* ── 하단: 매장 상세 ── */}
@@ -509,9 +551,8 @@ const styles = StyleSheet.create({
   listBadgeText:{ fontSize: 11, fontWeight: '600' },
 
   // 구분선
-  divider:      { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.paper100, paddingHorizontal: 12, paddingVertical: 7, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
-  dividerHandle:{ flex: 1, height: 1, backgroundColor: colors.border },
-  dividerLabel: { fontSize: 12, fontWeight: '700', color: colors.orange, marginHorizontal: 10 },
+  divider:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.black, paddingHorizontal: 14, paddingVertical: 9, borderTopWidth: 2, borderTopColor: colors.orange },
+  dividerLabel: { fontSize: 12, fontWeight: '700', color: colors.white },
 
   // 하단 패널
   bottomSection:{ flex: 1 },
@@ -535,6 +576,25 @@ const styles = StyleSheet.create({
   sectionHeader:{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, marginTop: 4 },
   sectionTitle: { fontSize: 13, fontWeight: '700', color: colors.black },
   sectionCount: { fontSize: 12, color: colors.gray },
+
+  // 블랙 멤버십
+  blackBanner:  { flexDirection: 'row', alignItems: 'flex-start', gap: 7, backgroundColor: '#1E1E1E', borderRadius: 8, padding: 10, marginBottom: 8 },
+  blackBannerText: { flex: 1, fontSize: 11, color: '#FFD700', lineHeight: 16 },
+  blackBadge:   { backgroundColor: '#1E1E1E', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, marginLeft: 5 },
+  blackBadgeText:{ fontSize: 10, fontWeight: '700', color: '#FFD700' },
+
+  // 쇼핑백
+  bagChip:      { backgroundColor: colors.orange + '22', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
+  bagChipText:  { fontSize: 11, fontWeight: '600', color: colors.orange },
+  itemBagChip:  { marginTop: 3, alignSelf: 'flex-start', backgroundColor: colors.orange + '18', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  itemBagChipText: { fontSize: 10, color: colors.orange, fontWeight: '600' },
+
+  // 상품명 행
+  itemNameRow:  { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
+
+  // 특이사항
+  noteCard:     { backgroundColor: colors.white, borderRadius: 10, padding: 12, marginBottom: 10 },
+  noteText:     { fontSize: 12, color: colors.gray, lineHeight: 18 },
 
   // 상품 목록
   itemCard:     { backgroundColor: colors.white, borderRadius: 10, overflow: 'hidden', marginBottom: 10 },
