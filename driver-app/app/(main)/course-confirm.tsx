@@ -51,7 +51,7 @@ interface DragItemProps {
   total: number;
   isDragging: boolean;
   isDropTarget: boolean;
-  onDragStart: (storeId: string, itemY: number, fromHandle?: boolean) => void;
+  onDragStart: (storeId: string, itemY: number, fromHandle?: boolean, startFingerY?: number) => void;
   onLayout: (storeId: string, y: number, height: number) => void;
   onOrderCircleTap: (storeId: string, currentOrder: number) => void;
   onPhonePress: (phone: string) => void;
@@ -80,17 +80,15 @@ function DragItem({
     });
   }, [store.id, onDragStart]);
 
-  const startDragFromHandle = useCallback(() => {
-    rowRef.current?.measure((_x, _y, _w, _h, _px, py) => {
-      onDragStart(store.id, py, true);
-    });
-  }, [store.id, onDragStart]);
-
-  // 핸들 Pan — 누르는 순간부터 바로 드래그
+  // 핸들 Pan — 누르는 순간부터 바로 드래그 (손가락 시작 Y도 전달)
   const handlePan = Gesture.Pan()
     .runOnJS(true)
     .minDistance(0)
-    .onStart(startDragFromHandle)
+    .onStart((e) => {
+      rowRef.current?.measure((_x, _y, _w, _h, _px, py) => {
+        onDragStart(store.id, py, true, e.absoluteY);
+      });
+    })
     .onUpdate((e) => onHandleGhostUpdate(e.absoluteY))
     .onEnd(onHandleDragEnd);
 
@@ -217,11 +215,14 @@ export default function CourseConfirmScreen() {
   const ghostScale = useSharedValue(1);
   // Reanimated 4: worklet 안에서 React state 직접 접근 불가 → shared value로 동기화
   const draggingSharedId = useSharedValue<string | null>(null);
-  const itemLayoutsRef = useRef<Map<string, { y: number; height: number; scrollOffset: number }>>(new Map());
+  const itemLayoutsRef = useRef<Map<string, { y: number; height: number }>>(new Map());
   const scrollOffsetRef = useRef(0);
   const scrollViewRef = useRef<ScrollView>(null);
   // 핸들 Pan 드래그 여부 — screenPan과 중복 방지
   const dragFromHandleRef = useRef(false);
+  // 드래그 시작 시점의 아이템 위치 + 손가락 위치 (delta 기반 drop 계산용)
+  const dragStartItemYRef = useRef(0);
+  const dragStartFingerYRef = useRef(0);
 
   // ── 번호 입력 모달 상태
   const [moveModal, setMoveModal] = useState<{ storeId: string; current: number } | null>(null);
@@ -264,14 +265,16 @@ export default function CourseConfirmScreen() {
     setShowReady(true);
   };
 
-  // ── 드래그 레이아웃 측정 (측정 시점의 스크롤 오프셋도 함께 저장)
+  // ── 드래그 레이아웃 측정
   const handleItemLayout = useCallback((storeId: string, y: number, height: number) => {
-    itemLayoutsRef.current.set(storeId, { y, height, scrollOffset: scrollOffsetRef.current });
+    itemLayoutsRef.current.set(storeId, { y, height });
   }, []);
 
   // ── 드래그 시작
-  const handleDragStart = useCallback((storeId: string, itemY: number, fromHandle = false) => {
+  const handleDragStart = useCallback((storeId: string, itemY: number, fromHandle = false, startFingerY?: number) => {
     dragFromHandleRef.current = fromHandle;
+    dragStartItemYRef.current = itemY;
+    dragStartFingerYRef.current = startFingerY ?? itemY;
     setDraggingId(storeId);
     draggingSharedId.value = storeId;
     setScrollEnabled(false);
@@ -280,19 +283,21 @@ export default function CourseConfirmScreen() {
     ghostScale.value = withSpring(1.04, { damping: 15 });
   }, [draggingSharedId, ghostY, ghostOpacity, ghostScale]);
 
-  // ── 드래그 중 drop target 계산 (스크롤 보정 포함)
+  // ── 드래그 중 drop target 계산 (delta 기반 — 좌표계 불일치 영향 없음)
   const computeDropTarget = useCallback((fingerY: number) => {
     const layouts = itemLayoutsRef.current;
-    const currentScroll = scrollOffsetRef.current;
+    // 손가락 이동량 → 드래그 중인 아이템의 "현재 위치" 추정
+    const fingerDelta = fingerY - dragStartFingerYRef.current;
+    const estimatedItemY = dragStartItemYRef.current + fingerDelta;
+
     let closest = -1;
     let closestDist = Infinity;
     sortedStores.forEach((s, idx) => {
       const layout = layouts.get(s.id);
       if (!layout) return;
-      // layout.y는 측정 당시 화면 절대좌표 → 현재 스크롤 반영해 보정
-      const currentScreenY = layout.y + layout.scrollOffset - currentScroll;
-      const centerY = currentScreenY + layout.height / 2;
-      const dist = Math.abs(fingerY - centerY);
+      // 모든 아이템 위치는 동일 시점에 측정 → 상대 위치는 정확
+      const centerY = layout.y + layout.height / 2;
+      const dist = Math.abs(estimatedItemY - centerY);
       if (dist < closestDist) {
         closestDist = dist;
         closest = idx;
