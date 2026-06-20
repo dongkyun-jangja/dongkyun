@@ -217,7 +217,7 @@ export default function CourseConfirmScreen() {
   const ghostScale = useSharedValue(1);
   // Reanimated 4: worklet 안에서 React state 직접 접근 불가 → shared value로 동기화
   const draggingSharedId = useSharedValue<string | null>(null);
-  const itemLayoutsRef = useRef<Map<string, { y: number; height: number }>>(new Map());
+  const itemLayoutsRef = useRef<Map<string, { y: number; height: number; scrollOffset: number }>>(new Map());
   const scrollOffsetRef = useRef(0);
   const scrollViewRef = useRef<ScrollView>(null);
   // 핸들 Pan 드래그 여부 — screenPan과 중복 방지
@@ -264,9 +264,9 @@ export default function CourseConfirmScreen() {
     setShowReady(true);
   };
 
-  // ── 드래그 레이아웃 측정
+  // ── 드래그 레이아웃 측정 (측정 시점의 스크롤 오프셋도 함께 저장)
   const handleItemLayout = useCallback((storeId: string, y: number, height: number) => {
-    itemLayoutsRef.current.set(storeId, { y, height });
+    itemLayoutsRef.current.set(storeId, { y, height, scrollOffset: scrollOffsetRef.current });
   }, []);
 
   // ── 드래그 시작
@@ -280,15 +280,18 @@ export default function CourseConfirmScreen() {
     ghostScale.value = withSpring(1.04, { damping: 15 });
   }, [draggingSharedId, ghostY, ghostOpacity, ghostScale]);
 
-  // ── 드래그 중 drop target 계산
+  // ── 드래그 중 drop target 계산 (스크롤 보정 포함)
   const computeDropTarget = useCallback((fingerY: number) => {
     const layouts = itemLayoutsRef.current;
+    const currentScroll = scrollOffsetRef.current;
     let closest = -1;
     let closestDist = Infinity;
     sortedStores.forEach((s, idx) => {
       const layout = layouts.get(s.id);
       if (!layout) return;
-      const centerY = layout.y + layout.height / 2;
+      // layout.y는 측정 당시 화면 절대좌표 → 현재 스크롤 반영해 보정
+      const currentScreenY = layout.y + layout.scrollOffset - currentScroll;
+      const centerY = currentScreenY + layout.height / 2;
       const dist = Math.abs(fingerY - centerY);
       if (dist < closestDist) {
         closestDist = dist;
