@@ -13,15 +13,17 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../src/constants/colors';
 import { useDelivery } from '../../src/context/DeliveryContext';
+import { useCancelLog } from '../../src/hooks/useCancelLog';
 import { Store } from '../../src/types';
 
 const { height: SCREEN_H } = Dimensions.get('window');
-const TOP_RATIO = 0.50; // 상단 목록 비율
+const TOP_RATIO = 0.40; // 상단 목록 비율
 
 // ─── 상단 목록 아이템 ────────────────────────────────────────────────────
 function ListItem({
@@ -84,10 +86,12 @@ function StorePanel({
   store,
   onDelivered,
   onIssue,
+  onUndoRequest,
 }: {
   store: Store;
   onDelivered: (storeId: string, photos: string[]) => void;
   onIssue: (storeId: string) => void;
+  onUndoRequest: (storeId: string) => void;
 }) {
   const [pendingPhotos, setPendingPhotos] = useState<string[]>([]);
   const [pendingBagPhotos, setPendingBagPhotos] = useState<string[]>([]);
@@ -379,7 +383,7 @@ function StorePanel({
         {isDelivered && (
           <View style={styles.doneCard}>
             <Ionicons name="checkmark-circle" size={22} color={colors.green} />
-            <Text style={styles.doneText}>배송 완료  {store.deliveredAt ?? ''}</Text>
+            <Text style={[styles.doneText, { flex: 1 }]}>배송 완료  {store.deliveredAt ?? ''}</Text>
           </View>
         )}
 
@@ -393,6 +397,16 @@ function StorePanel({
 
         <View style={{ height: 120 }} />
       </ScrollView>
+
+      {/* 배송 완료 취소 버튼 */}
+      {isDelivered && (
+        <View style={styles.panelBar}>
+          <Pressable style={styles.undoBtn} onPress={() => onUndoRequest(store.id)}>
+            <Ionicons name="arrow-undo-circle-outline" size={17} color={colors.orange} />
+            <Text style={styles.undoBtnText}>배송 완료 취소</Text>
+          </Pressable>
+        </View>
+      )}
 
       {/* 하단 버튼 */}
       {isPending && (
@@ -488,8 +502,12 @@ function StorePanel({
 export default function SplitDeliveryScreen() {
   const { storeId } = useLocalSearchParams<{ storeId?: string }>();
   const { course, updateStoreStatus, addStorePhoto } = useDelivery();
+  const { addCancelLog } = useCancelLog();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  const [undoTarget, setUndoTarget] = useState<string | null>(null);
+  const [undoReason, setUndoReason] = useState('');
 
   const sortedStores = useMemo(
     () =>
@@ -531,6 +549,32 @@ export default function SplitDeliveryScreen() {
     },
     [updateStoreStatus, sortedStores, router],
   );
+
+  const handleUndoConfirm = useCallback(() => {
+    if (!undoTarget || undoReason.trim().length === 0) return;
+    const now = new Date();
+    const hh = now.getHours().toString().padStart(2, '0');
+    const mm = now.getMinutes().toString().padStart(2, '0');
+    const targetStore = sortedStores.find((s) => s.id === undoTarget);
+    if (targetStore) {
+      addCancelLog({
+        date: course.date,
+        cancelledAt: `${hh}:${mm}`,
+        driverId: course.driver.id,
+        driverName: course.driver.name,
+        distributorName: course.driver.distributorName,
+        courseName: course.driver.courseName,
+        storeId: targetStore.id,
+        storeCode: targetStore.code,
+        storeName: targetStore.name,
+        originalDeliveredAt: targetStore.deliveredAt,
+        reason: undoReason.trim(),
+      });
+    }
+    updateStoreStatus(undoTarget, 'pending');
+    setUndoTarget(null);
+    setUndoReason('');
+  }, [undoTarget, undoReason, sortedStores, course, addCancelLog, updateStoreStatus]);
 
   const handleIssue = useCallback(
     (id: string) => {
@@ -620,8 +664,83 @@ export default function SplitDeliveryScreen() {
           store={selectedStore}
           onDelivered={handleDelivered}
           onIssue={handleIssue}
+          onUndoRequest={setUndoTarget}
         />
       </View>
+
+      {/* 배송 완료 취소 팝업 */}
+      {undoTarget !== null && (() => {
+        const targetStore = sortedStores.find((s) => s.id === undoTarget);
+        if (!targetStore) return null;
+        const totalQty = targetStore.items.reduce((sum, item) => sum + item.quantity, 0);
+        const canConfirmUndo = undoReason.trim().length > 0;
+        return (
+          <Modal visible transparent animationType="fade" onRequestClose={() => { setUndoTarget(null); setUndoReason(''); }}>
+            <Pressable style={styles.overlay} onPress={() => { setUndoTarget(null); setUndoReason(''); }}>
+              <Pressable style={styles.undoModal} onPress={(e) => e.stopPropagation()}>
+                {/* 헤더 */}
+                <View style={styles.undoModalHeader}>
+                  <View style={styles.undoIconWrap}>
+                    <Ionicons name="arrow-undo-circle-outline" size={26} color={colors.orange} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.undoModalTitle}>배송 완료 취소</Text>
+                    <Text style={styles.undoModalStoreName} numberOfLines={1}>{targetStore.name}</Text>
+                  </View>
+                </View>
+
+                {/* 배송 요약 */}
+                <View style={styles.undoSummaryBox}>
+                  <View style={styles.undoSummaryRow}>
+                    <Ionicons name="time-outline" size={13} color={colors.gray} />
+                    <Text style={styles.undoSummaryLabel}>완료 시각</Text>
+                    <Text style={styles.undoSummaryValue}>{targetStore.deliveredAt ?? '—'}</Text>
+                  </View>
+                  <View style={styles.undoSummaryDivider} />
+                  <View style={styles.undoSummaryRow}>
+                    <Ionicons name="cube-outline" size={13} color={colors.gray} />
+                    <Text style={styles.undoSummaryLabel}>배송 상품</Text>
+                    <Text style={styles.undoSummaryValue}>{targetStore.items.length}종 · 총 {totalQty}개</Text>
+                  </View>
+                </View>
+
+                {/* 취소 사유 */}
+                <View style={styles.undoReasonWrap}>
+                  <Text style={styles.undoReasonLabel}>
+                    취소 사유 <Text style={{ color: colors.red }}>*</Text>
+                  </Text>
+                  <TextInput
+                    style={styles.undoReasonInput}
+                    value={undoReason}
+                    onChangeText={setUndoReason}
+                    placeholder="취소 사유를 입력해 주세요"
+                    placeholderTextColor={colors.gray}
+                    multiline
+                    maxLength={100}
+                  />
+                  <Text style={styles.undoReasonCount}>{undoReason.length}/100</Text>
+                </View>
+
+                {/* 버튼 */}
+                <View style={styles.undoModalBtns}>
+                  <Pressable
+                    style={styles.undoModalCancelBtn}
+                    onPress={() => { setUndoTarget(null); setUndoReason(''); }}
+                  >
+                    <Text style={styles.undoModalCancelText}>아니오</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.undoModalConfirmBtn, !canConfirmUndo && styles.undoModalConfirmBtnDisabled]}
+                    onPress={handleUndoConfirm}
+                  >
+                    <Text style={[styles.undoModalConfirmText, !canConfirmUndo && { color: 'rgba(255,255,255,0.45)' }]}>완료 취소</Text>
+                  </Pressable>
+                </View>
+              </Pressable>
+            </Pressable>
+          </Modal>
+        );
+      })()}
     </SafeAreaView>
   );
 }
@@ -737,6 +856,32 @@ const styles = StyleSheet.create({
   retakeBtnText:{ fontSize: 13, color: colors.gray },
   issueBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: colors.red + '50', borderRadius: 10, paddingVertical: 10 },
   issueBtnText: { fontSize: 13, color: colors.red },
+
+  // 배송 완료 취소 버튼
+  undoBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1.5, borderColor: colors.orange + '80', borderRadius: 12, paddingVertical: 13 },
+  undoBtnText:  { fontSize: 14, fontWeight: '600', color: colors.orange },
+
+  // 취소 팝업
+  undoModal:    { backgroundColor: colors.white, borderRadius: 16, padding: 20, width: '88%', gap: 12 },
+  undoModalHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 2 },
+  undoIconWrap: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.orange + '18', alignItems: 'center', justifyContent: 'center' },
+  undoModalTitle: { fontSize: 15, fontWeight: '700', color: colors.black },
+  undoModalStoreName: { fontSize: 12, color: colors.gray, marginTop: 2 },
+  undoSummaryBox: { backgroundColor: colors.paper100, borderRadius: 10, padding: 12, gap: 6 },
+  undoSummaryRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  undoSummaryLabel: { fontSize: 12, color: colors.gray, width: 56 },
+  undoSummaryValue: { fontSize: 12, fontWeight: '600', color: colors.black, flex: 1 },
+  undoSummaryDivider: { height: 1, backgroundColor: colors.border },
+  undoReasonWrap: { gap: 4 },
+  undoReasonLabel: { fontSize: 12, fontWeight: '600', color: colors.black },
+  undoReasonInput: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 10, fontSize: 13, color: colors.black, minHeight: 72, textAlignVertical: 'top' },
+  undoReasonCount: { fontSize: 11, color: colors.gray, textAlign: 'right' },
+  undoModalBtns:  { flexDirection: 'row', gap: 8, marginTop: 4 },
+  undoModalCancelBtn: { flex: 1, backgroundColor: colors.paper100, borderRadius: 10, paddingVertical: 13, alignItems: 'center' },
+  undoModalCancelText: { fontSize: 14, fontWeight: '600', color: colors.gray },
+  undoModalConfirmBtn: { flex: 1, backgroundColor: colors.orange, borderRadius: 10, paddingVertical: 13, alignItems: 'center' },
+  undoModalConfirmBtnDisabled: { backgroundColor: colors.gray },
+  undoModalConfirmText: { fontSize: 14, fontWeight: '700', color: colors.white },
 
   // 확인 팝업
   overlay:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
