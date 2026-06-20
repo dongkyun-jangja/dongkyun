@@ -66,15 +66,6 @@ export function useKakaoChat() {
     const hasOpen = openChatUrl.length > 0;
     const hasRegular = regularChatUrl.length > 0;
 
-    if (!hasOpen && !hasRegular) {
-      Alert.alert(
-        '채팅방 미설정',
-        '설정(⚙)에서 카카오 채팅방 링크를 먼저 입력해주세요.',
-        [{ text: '확인' }],
-      );
-      return;
-    }
-
     try {
       if (type === 'regular' && hasRegular) {
         await openUrl(regularChatUrl);
@@ -82,11 +73,14 @@ export function useKakaoChat() {
         await openUrl(openChatUrl);
       } else if (hasOpen) {
         await openUrl(openChatUrl);
-      } else {
+      } else if (hasRegular) {
         await openUrl(regularChatUrl);
+      } else {
+        // 채팅방 URL 미설정 시 카카오톡 앱만 실행
+        await Linking.openURL('kakaotalk://');
       }
     } catch {
-      Alert.alert('오류', '채팅방을 열 수 없습니다. 링크를 다시 확인해주세요.');
+      Alert.alert('오류', '카카오톡을 열 수 없습니다. 앱이 설치되어 있는지 확인해주세요.');
     }
   }, [openChatUrl, regularChatUrl]);
 

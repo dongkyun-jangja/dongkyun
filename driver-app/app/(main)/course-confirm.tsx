@@ -155,41 +155,6 @@ function DragItem({
             </GestureDetector>
           </View>
 
-          {/* 상품 칩 */}
-          <View style={styles.itemsRow}>
-            {store.items.slice(0, 2).map((item: any) => (
-              <View key={item.code} style={styles.itemChip}>
-                <Text style={styles.itemChipText} numberOfLines={1}>
-                  {item.name.split('(')[0].trim()}
-                </Text>
-                <Text style={styles.itemChipQty}>
-                  {Math.floor(item.quantity / item.boxUnit)}박스
-                </Text>
-              </View>
-            ))}
-            {store.items.length > 2 && (
-              <View style={[styles.itemChip, styles.itemChipMore]}>
-                <Text style={styles.itemChipMoreText}>+{store.items.length - 2}</Text>
-              </View>
-            )}
-            {(() => {
-              const bags = store.items.reduce((b: number, i: any) => b + (i.bags ?? 0), 0);
-              return bags > 0 ? (
-                <View style={[styles.itemChip, styles.itemChipBag]}>
-                  <Text style={styles.itemChipBagText}>🛍 {bags}개</Text>
-                </View>
-              ) : null;
-            })()}
-            {/* 회수 뱃지 */}
-            {store.pickupItems && store.pickupItems.length > 0 && (
-              <View style={[styles.itemChip, styles.itemChipPickup]}>
-                <Ionicons name="arrow-undo" size={10} color={colors.blue} />
-                <Text style={styles.itemChipPickupText}>
-                  회수 {store.pickupItems.length}종
-                </Text>
-              </View>
-            )}
-          </View>
         </View>
       </GestureDetector>
     </View>
@@ -205,6 +170,7 @@ export default function CourseConfirmScreen() {
   const [confirmTime, setConfirmTime] = useState('');
   const [now, setNow] = useState(new Date());
   const [showProductList, setShowProductList] = useState(false);
+  const [showStats, setShowStats] = useState(false);
 
   // ── 드래그 상태
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -540,35 +506,53 @@ export default function CourseConfirmScreen() {
             {course.driver.distributorName} · {course.driver.courseName}
           </Text>
 
-          {/* 요약 */}
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryValue}>{sortedStores.length}</Text>
-              <Text style={styles.summaryLabel}>배송지</Text>
-            </View>
-            <View style={styles.summaryDivider} />
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryValue}>{totalItems}</Text>
-              <Text style={styles.summaryLabel}>상품 종류</Text>
-            </View>
-            <View style={styles.summaryDivider} />
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryValue}>{totalBags}</Text>
-              <Text style={styles.summaryLabel}>🛍 쇼핑백</Text>
-            </View>
-            <View style={styles.summaryDivider} />
-            <View style={styles.summaryItem}>
-              <View style={styles.summaryValueRow}>
-                {blackItemCount > 0 && (
-                  <Ionicons name="diamond" size={11} color="#EECB4E" />
-                )}
-                <Text style={[styles.summaryValue, blackItemCount > 0 && styles.summaryValueBlack]}>
-                  {blackItemCount}
-                </Text>
+          {/* 요약 — 탭하면 펼침 */}
+          <Pressable
+            style={({ pressed }) => [styles.statsToggleBtn, pressed && { opacity: 0.75 }]}
+            onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setShowStats((v) => !v);
+            }}
+          >
+            <Text style={styles.statsToggleText}>
+              배송지 {sortedStores.length}개 · 상품 {totalItems}종
+            </Text>
+            <Ionicons
+              name={showStats ? 'chevron-up' : 'chevron-down'}
+              size={13}
+              color="rgba(255,255,255,0.6)"
+            />
+          </Pressable>
+          {showStats && (
+            <View style={styles.summaryRow}>
+              <View style={styles.summaryItem}>
+                <Text style={styles.summaryValue}>{sortedStores.length}</Text>
+                <Text style={styles.summaryLabel}>배송지</Text>
               </View>
-              <Text style={styles.summaryLabel}>블랙멤버십</Text>
+              <View style={styles.summaryDivider} />
+              <View style={styles.summaryItem}>
+                <Text style={styles.summaryValue}>{totalItems}</Text>
+                <Text style={styles.summaryLabel}>상품 종류</Text>
+              </View>
+              <View style={styles.summaryDivider} />
+              <View style={styles.summaryItem}>
+                <Text style={styles.summaryValue}>{totalBags}</Text>
+                <Text style={styles.summaryLabel}>🛍 쇼핑백</Text>
+              </View>
+              <View style={styles.summaryDivider} />
+              <View style={styles.summaryItem}>
+                <View style={styles.summaryValueRow}>
+                  {blackItemCount > 0 && (
+                    <Ionicons name="diamond" size={11} color="#EECB4E" />
+                  )}
+                  <Text style={[styles.summaryValue, blackItemCount > 0 && styles.summaryValueBlack]}>
+                    {blackItemCount}
+                  </Text>
+                </View>
+                <Text style={styles.summaryLabel}>블랙멤버십</Text>
+              </View>
             </View>
-          </View>
+          )}
 
           {/* 상품 목록 접이식 */}
           <Pressable
@@ -708,9 +692,16 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 21, fontWeight: '800', color: colors.white, letterSpacing: -0.5 },
   headerSub: { fontSize: 12, color: 'rgba(255,255,255,0.7)' },
 
+  statsToggleBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 10,
+    paddingVertical: 7, paddingHorizontal: 12, marginTop: 6,
+  },
+  statsToggleText: { fontSize: 12, color: 'rgba(255,255,255,0.8)', fontWeight: '500' },
+
   summaryRow: {
     flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 12, padding: 10, marginTop: 6,
+    borderRadius: 12, padding: 10, marginTop: 4,
   },
   summaryItem: { flex: 1, alignItems: 'center', gap: 1 },
   summaryValue: {

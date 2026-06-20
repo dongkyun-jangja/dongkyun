@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -20,6 +21,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { colors } from '../../src/constants/colors';
 import { useDelivery } from '../../src/context/DeliveryContext';
 import { useCancelLog } from '../../src/hooks/useCancelLog';
+import { useKakaoChat } from '../../src/hooks/useKakaoChat';
 import { Store } from '../../src/types';
 
 const { height: SCREEN_H } = Dimensions.get('window');
@@ -29,11 +31,15 @@ const TOP_RATIO = 0.40; // 상단 목록 비율
 function ListItem({
   store,
   isSelected,
+  isHighlighted,
   onSelect,
+  onLayout,
 }: {
   store: Store;
   isSelected: boolean;
+  isHighlighted: boolean;
   onSelect: (id: string) => void;
+  onLayout: (y: number) => void;
 }) {
   const statusColor =
     store.status === 'delivered' ? colors.green :
@@ -52,8 +58,9 @@ function ListItem({
 
   return (
     <Pressable
-      style={[styles.listItem, isSelected && styles.listItemSelected]}
+      style={[styles.listItem, isSelected && styles.listItemSelected, isHighlighted && styles.listItemHighlighted]}
       onPress={() => onSelect(store.id)}
+      onLayout={(e) => onLayout(e.nativeEvent.layout.y)}
     >
       {/* 왼쪽: 순서 번호 */}
       <View style={[styles.listNum, isSelected && styles.listNumSelected]}>
@@ -87,25 +94,26 @@ function StorePanel({
   onDelivered,
   onIssue,
   onUndoRequest,
+  onOpenKakao,
+  onIssueReset,
 }: {
   store: Store;
   onDelivered: (storeId: string, photos: string[]) => void;
   onIssue: (storeId: string) => void;
   onUndoRequest: (storeId: string) => void;
+  onOpenKakao: (storeId: string) => void;
+  onIssueReset: (storeId: string) => void;
 }) {
   const [pendingPhotos, setPendingPhotos] = useState<string[]>([]);
-  const [pendingBagPhotos, setPendingBagPhotos] = useState<string[]>([]);
   const [showConfirm, setShowConfirm] = useState(false);
   const prevStoreId = useRef(store.id);
 
   const totalBags = store.items.reduce((s, i) => s + (i.bags ?? 0), 0);
-  const needsBagPhoto = totalBags > 0;
 
   // 매장 바뀌면 임시 사진 초기화
   if (prevStoreId.current !== store.id) {
     prevStoreId.current = store.id;
     if (pendingPhotos.length > 0) setPendingPhotos([]);
-    if (pendingBagPhotos.length > 0) setPendingBagPhotos([]);
   }
 
   const openCamera = useCallback(async (): Promise<string | null> => {
@@ -137,25 +145,11 @@ function StorePanel({
     setPendingPhotos((prev) => [...prev, uri]);
   }, [openCamera, pendingPhotos.length]);
 
-  const handleTakeBagPhoto = useCallback(async () => {
-    const uri = await openCamera();
-    if (!uri) return;
-    setPendingBagPhotos([uri]);
-  }, [openCamera]);
-
-  const handleAddBagPhoto = useCallback(async () => {
-    if (pendingBagPhotos.length >= 3) return;
-    const uri = await openCamera();
-    if (!uri) return;
-    setPendingBagPhotos((prev) => [...prev, uri]);
-  }, [openCamera, pendingBagPhotos.length]);
-
   const isPending = store.status === 'pending';
   const isDelivered = store.status === 'delivered';
   const isIssue = store.status === 'issue';
   const hasPendingPhotos = pendingPhotos.length > 0;
-  const hasBagPhotos = pendingBagPhotos.length > 0;
-  const canConfirm = hasPendingPhotos && (!needsBagPhoto || hasBagPhotos);
+  const canConfirm = hasPendingPhotos;
 
   return (
     <View style={styles.panel}>
@@ -204,14 +198,13 @@ function StorePanel({
               )}
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>배송 상품</Text>
-                <Text style={styles.sectionCount}>{store.items.length}종</Text>
+                <Text style={styles.sectionCount}>{store.items.length + (totalBags > 0 ? 1 : 0)}종</Text>
               </View>
               <View style={styles.itemCard}>
                 {store.items.map((item, idx) => {
                   const boxes = Math.floor(item.quantity / item.boxUnit);
-                  const isLast = idx === store.items.length - 1;
                   return (
-                    <View key={item.code} style={[styles.itemRow, !isLast && styles.itemBorder]}>
+                    <View key={item.code} style={[styles.itemRow, styles.itemBorder]}>
                       <View style={styles.itemLeft}>
                         <View style={styles.itemNameRow}>
                           <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
@@ -233,30 +226,20 @@ function StorePanel({
                     </View>
                   );
                 })}
-              </View>
-
-              {/* 쇼핑백 — 별도 항목 */}
-              {totalBags > 0 && (
-                <>
-                  <View style={styles.sectionHeader}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={styles.sectionTitle}>쇼핑백</Text>
-                    </View>
-                    <Text style={styles.sectionCount}>별도 상품</Text>
-                  </View>
-                  <View style={[styles.itemCard, styles.bagItemCard]}>
-                    <View style={styles.itemRow}>
-                      <View style={styles.itemLeft}>
+                {totalBags > 0 && (
+                  <View style={styles.itemRow}>
+                    <View style={styles.itemLeft}>
+                      <View style={[styles.itemNameRow, { gap: 5 }]}>
+                        <Ionicons name="bag-handle-outline" size={14} color={colors.orange} />
                         <Text style={styles.itemName}>쇼핑백</Text>
-                        <Text style={styles.itemCode}>고객 별도 구매 — 누락 주의</Text>
-                      </View>
-                      <View style={styles.itemRight}>
-                        <Text style={[styles.itemQty, { color: colors.orange }]}>{totalBags}개</Text>
                       </View>
                     </View>
+                    <View style={styles.itemRight}>
+                      <Text style={[styles.itemQty, { color: colors.orange }]}>{totalBags}개</Text>
+                    </View>
                   </View>
-                </>
-              )}
+                )}
+              </View>
             </>
           );
         })()}
@@ -339,45 +322,6 @@ function StorePanel({
           </View>
         )}
 
-        {/* 쇼핑백 사진 */}
-        {isPending && needsBagPhoto && hasPendingPhotos && (
-          <View style={[styles.photoCard, !hasBagPhotos && styles.photoCardRequired]}>
-            <View style={styles.photoHeader}>
-              <Ionicons name="bag-handle" size={14} color={hasBagPhotos ? colors.orange : colors.red} />
-              <Text style={[styles.photoTitle, !hasBagPhotos && { color: colors.red }]}>
-                쇼핑백 사진{!hasBagPhotos ? ' (필수)' : ''}
-              </Text>
-              {hasBagPhotos && <Text style={styles.photoCount}>{pendingBagPhotos.length}/3장</Text>}
-            </View>
-            {!hasBagPhotos ? (
-              <Pressable style={styles.bagPhotoPrompt} onPress={handleTakeBagPhoto}>
-                <Ionicons name="camera-outline" size={20} color={colors.red} />
-                <Text style={styles.bagPhotoPromptText}>쇼핑백 {totalBags}개를 함께 촬영해 주세요</Text>
-              </Pressable>
-            ) : (
-              <View style={styles.photoGrid}>
-                {pendingBagPhotos.map((uri, idx) => (
-                  <View key={idx} style={styles.photoThumbWrap}>
-                    <Image source={{ uri }} style={styles.photoThumb} resizeMode="cover" />
-                    <Pressable
-                      style={styles.photoDelBtn}
-                      onPress={() => setPendingBagPhotos((p) => p.filter((_, i) => i !== idx))}
-                      hitSlop={4}
-                    >
-                      <Ionicons name="close-circle" size={18} color={colors.red} />
-                    </Pressable>
-                  </View>
-                ))}
-                {pendingBagPhotos.length < 3 && (
-                  <Pressable style={styles.photoAddBtn} onPress={handleAddBagPhoto}>
-                    <Ionicons name="camera-outline" size={20} color={colors.orange} />
-                    <Text style={styles.photoAddText}>추가</Text>
-                  </Pressable>
-                )}
-              </View>
-            )}
-          </View>
-        )}
 
         {/* 완료 상태 */}
         {isDelivered && (
@@ -389,9 +333,33 @@ function StorePanel({
 
         {/* 이슈 상태 */}
         {isIssue && (
-          <View style={styles.issueCard}>
-            <Ionicons name="alert-circle" size={22} color={colors.red} />
-            <Text style={styles.issueText}>이슈 신고됨 — 담당자 확인 대기 중</Text>
+          <View style={styles.issueSection}>
+            <View style={styles.issueHeader}>
+              <Ionicons name="alert-circle" size={18} color={colors.red} />
+              <View>
+                <Text style={styles.issueTitle}>이슈 신고 완료</Text>
+                <Text style={styles.issueSubText}>담당자 확인 대기 중</Text>
+              </View>
+            </View>
+            <View style={styles.issueActions}>
+              <Pressable
+                style={({ pressed }) => [styles.issueActionBtn, styles.issueActionKakao, pressed && { opacity: 0.85 }]}
+                onPress={() => onOpenKakao(store.id)}
+              >
+                <Text style={styles.issueActionEmoji}>💬</Text>
+                <View>
+                  <Text style={styles.issueActionLabel}>채팅방 열기</Text>
+                  <Text style={styles.issueActionSub}>메시지 자동 복사됨</Text>
+                </View>
+              </Pressable>
+            </View>
+            <Pressable
+              style={({ pressed }) => [styles.issueResetBtn, pressed && { opacity: 0.7 }]}
+              onPress={() => onIssueReset(store.id)}
+            >
+              <Ionicons name="refresh-circle-outline" size={14} color={colors.gray} />
+              <Text style={styles.issueResetText}>이슈 초기화</Text>
+            </Pressable>
           </View>
         )}
 
@@ -402,7 +370,7 @@ function StorePanel({
       {isDelivered && (
         <View style={styles.panelBar}>
           <Pressable style={styles.undoBtn} onPress={() => onUndoRequest(store.id)}>
-            <Ionicons name="arrow-undo-circle-outline" size={17} color={colors.orange} />
+            <Ionicons name="arrow-undo-circle-outline" size={17} color={colors.white} />
             <Text style={styles.undoBtnText}>배송 완료 취소</Text>
           </Pressable>
         </View>
@@ -411,7 +379,7 @@ function StorePanel({
       {/* 하단 버튼 */}
       {isPending && (
         <View style={styles.panelBar}>
-          {!hasPendingPhotos ? (
+          {!canConfirm ? (
             <>
               <Pressable style={styles.primaryBtn} onPress={handleTakePhoto}>
                 <Ionicons name="camera" size={18} color={colors.white} />
@@ -421,24 +389,6 @@ function StorePanel({
                 <Ionicons name="alert-circle-outline" size={15} color={colors.red} />
                 <Text style={styles.issueBtnText}>이슈 신고</Text>
               </Pressable>
-            </>
-          ) : !canConfirm ? (
-            /* 상품 사진 있음, 쇼핑백 사진 아직 없음 */
-            <>
-              <Pressable style={styles.bagPhotoBtn} onPress={handleTakeBagPhoto}>
-                <Ionicons name="bag-handle" size={18} color={colors.white} />
-                <Text style={styles.primaryBtnText}>쇼핑백 사진 촬영하기</Text>
-              </Pressable>
-              <View style={styles.secondaryRow}>
-                <Pressable style={styles.retakeBtn} onPress={handleTakePhoto}>
-                  <Ionicons name="camera-outline" size={14} color={colors.gray} />
-                  <Text style={styles.retakeBtnText}>상품 다시 찍기</Text>
-                </Pressable>
-                <Pressable style={styles.issueBtn} onPress={() => onIssue(store.id)}>
-                  <Ionicons name="alert-circle-outline" size={14} color={colors.red} />
-                  <Text style={styles.issueBtnText}>이슈 신고</Text>
-                </Pressable>
-              </View>
             </>
           ) : (
             /* 모든 사진 완료 */
@@ -501,8 +451,9 @@ function StorePanel({
 // ─── 메인 화면 ───────────────────────────────────────────────────────────
 export default function SplitDeliveryScreen() {
   const { storeId } = useLocalSearchParams<{ storeId?: string }>();
-  const { course, updateStoreStatus, addStorePhoto } = useDelivery();
+  const { course, updateStoreStatus, addStorePhoto, resetIssueStore, cancelStore } = useDelivery();
   const { addCancelLog } = useCancelLog();
+  const { openChat: openKakaoChat } = useKakaoChat();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -525,6 +476,52 @@ export default function SplitDeliveryScreen() {
   const [selectedId, setSelectedId] = useState<string>(
     storeId ?? firstPendingId ?? sortedStores[0]?.id ?? '',
   );
+
+  // ── 이슈 초기화 모달
+  const [issueResetTargetId, setIssueResetTargetId] = useState<string | null>(null);
+
+  // ── 매장 검색
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [highlightedStoreId, setHighlightedStoreId] = useState<string | null>(null);
+  const searchInputRef = useRef<TextInput>(null);
+  const listScrollRef = useRef<ScrollView>(null);
+  const itemLayoutsRef = useRef<Map<string, { y: number }>>(new Map());
+
+  const searchSuggestions = useMemo(() => {
+    const q = searchQuery.trim();
+    if (!q) return [];
+    return sortedStores.filter((s) => s.name.toLowerCase().includes(q.toLowerCase())).slice(0, 5);
+  }, [searchQuery, sortedStores]);
+
+  const scrollToStore = useCallback((storeId: string) => {
+    const layout = itemLayoutsRef.current.get(storeId);
+    if (layout) {
+      const visibleHeight = SCREEN_H * TOP_RATIO - 60;
+      const targetY = Math.max(0, layout.y - visibleHeight / 2 + 24);
+      listScrollRef.current?.scrollTo({ y: targetY, animated: true });
+    }
+    setSelectedId(storeId);
+    setHighlightedStoreId(storeId);
+    setShowSearch(false);
+    setSearchQuery('');
+    setTimeout(() => setHighlightedStoreId(null), 2000);
+  }, []);
+
+  const handleSearch = useCallback(() => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    const found = sortedStores.find((s) => s.name.toLowerCase().includes(q.toLowerCase()));
+    if (found) scrollToStore(found.id);
+  }, [searchQuery, sortedStores, scrollToStore]);
+
+  const toggleSearch = useCallback(() => {
+    setShowSearch((v) => {
+      if (!v) setTimeout(() => searchInputRef.current?.focus(), 100);
+      else setSearchQuery('');
+      return !v;
+    });
+  }, []);
 
   const selectedStore = useMemo(
     () => sortedStores.find((s) => s.id === selectedId) ?? sortedStores[0],
@@ -579,17 +576,44 @@ export default function SplitDeliveryScreen() {
   const handleIssue = useCallback(
     (id: string) => {
       updateStoreStatus(id, 'issue');
-      const nextPending = sortedStores.find(
-        (s) => s.status === 'pending' && s.id !== id,
-      );
-      if (nextPending) {
-        setSelectedId(nextPending.id);
-      } else {
-        router.replace('/(main)/(tabs)/dashboard');
-      }
     },
-    [updateStoreStatus, sortedStores, router],
+    [updateStoreStatus],
   );
+
+  const buildIssueMessage = useCallback((id: string) => {
+    const store = sortedStores.find((s) => s.id === id);
+    if (!store) return '';
+    const now = new Date();
+    const h = now.getHours();
+    const timeStr = `${h >= 12 ? '오후' : '오전'} ${h > 12 ? h - 12 : h}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const itemLines = store.items
+      .map((i) => `• ${i.name} — ${Math.floor(i.quantity / i.boxUnit)}박스 (${i.quantity}개)`)
+      .join('\n');
+    return [
+      `🚨 [이슈 신고] ${store.name}`,
+      ``,
+      `배송 기사: ${course.driver.name} (${course.driver.distributorName} · ${course.driver.courseName})`,
+      `신고 시각: ${timeStr}`,
+      ``,
+      `📍 매장`,
+      `${store.name}`,
+      `${store.address}`,
+      `☎ ${store.phone}`,
+      ``,
+      `📦 배송 상품`,
+      itemLines,
+    ].join('\n');
+  }, [sortedStores, course]);
+
+  const handleOpenKakao = useCallback(async (id: string) => {
+    const message = buildIssueMessage(id);
+    if (message) await Clipboard.setStringAsync(message);
+    openKakaoChat();
+  }, [buildIssueMessage, openKakaoChat]);
+
+  const handleIssueReset = useCallback((id: string) => {
+    setIssueResetTargetId(id);
+  }, []);
 
   if (!selectedStore) {
     return (
@@ -619,8 +643,65 @@ export default function SplitDeliveryScreen() {
             {doneCount}/{totalCount} 완료
           </Text>
         </View>
-        <View style={{ width: 36 }} />
+        <Pressable
+          style={({ pressed }) => [styles.searchToggleBtn, pressed && { opacity: 0.6 }]}
+          onPress={toggleSearch}
+          hitSlop={8}
+        >
+          <Ionicons
+            name={showSearch ? 'close-outline' : 'search-outline'}
+            size={15}
+            color={colors.orange}
+          />
+          <Text style={styles.searchToggleText}>
+            매장명
+          </Text>
+        </Pressable>
       </View>
+
+      {/* 검색 바 */}
+      {showSearch && (
+        <View style={styles.searchBar}>
+          <View style={styles.searchInputWrap}>
+            <Ionicons name="search-outline" size={15} color={colors.gray} />
+            <TextInput
+              ref={searchInputRef}
+              style={styles.searchInput}
+              placeholder="매장명 검색"
+              placeholderTextColor={colors.gray}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onSubmitEditing={handleSearch}
+              returnKeyType="search"
+            />
+            {searchQuery.length > 0 && (
+              <Pressable onPress={() => setSearchQuery('')} hitSlop={6}>
+                <Ionicons name="close-circle" size={16} color={colors.gray} />
+              </Pressable>
+            )}
+          </View>
+          <Pressable
+            style={({ pressed }) => [styles.searchBtn, pressed && { opacity: 0.75 }]}
+            onPress={handleSearch}
+          >
+            <Text style={styles.searchBtnText}>검색</Text>
+          </Pressable>
+          {searchSuggestions.length > 0 && (
+            <View style={styles.suggestionsBox}>
+              {searchSuggestions.map((s) => (
+                <Pressable
+                  key={s.id}
+                  style={({ pressed }) => [styles.suggestionItem, pressed && { opacity: 0.7 }]}
+                  onPress={() => scrollToStore(s.id)}
+                >
+                  <Ionicons name="location-outline" size={13} color={colors.orange} />
+                  <Text style={styles.suggestionText} numberOfLines={1}>{s.name}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
 
       {/* 진행률 바 */}
       <View style={styles.progressBar}>
@@ -635,6 +716,7 @@ export default function SplitDeliveryScreen() {
       {/* ── 상단: 오늘 목록 ── */}
       <View style={[styles.topSection, { height: SCREEN_H * TOP_RATIO - 60 }]}>
         <ScrollView
+          ref={listScrollRef}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingVertical: 6 }}
         >
@@ -643,7 +725,9 @@ export default function SplitDeliveryScreen() {
               key={store.id}
               store={store}
               isSelected={store.id === selectedId}
+              isHighlighted={highlightedStoreId === store.id}
               onSelect={setSelectedId}
+              onLayout={(y) => itemLayoutsRef.current.set(store.id, { y })}
             />
           ))}
         </ScrollView>
@@ -665,8 +749,39 @@ export default function SplitDeliveryScreen() {
           onDelivered={handleDelivered}
           onIssue={handleIssue}
           onUndoRequest={setUndoTarget}
+          onOpenKakao={handleOpenKakao}
+          onIssueReset={handleIssueReset}
         />
       </View>
+
+      {/* 이슈 초기화 확인 팝업 */}
+      {issueResetTargetId !== null && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setIssueResetTargetId(null)}>
+          <Pressable style={styles.overlay} onPress={() => setIssueResetTargetId(null)}>
+            <Pressable style={styles.issueResetModal} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.issueResetModalIcon}>
+                <Ionicons name="refresh-circle" size={36} color={colors.orange} />
+              </View>
+              <Text style={styles.issueResetModalTitle}>이슈를 초기화합니다</Text>
+              <Text style={styles.issueResetModalDesc}>
+                이슈 상태가 해제되고 배송 대기 상태로 돌아갑니다.
+              </Text>
+              <Pressable
+                style={({ pressed }) => [styles.issueResetOption, styles.issueResetOptionPrimary, pressed && { opacity: 0.85 }]}
+                onPress={() => {
+                  resetIssueStore(issueResetTargetId);
+                  setIssueResetTargetId(null);
+                }}
+              >
+                <Text style={[styles.issueResetOptionTitle, { textAlign: 'center', flex: 1 }]}>확인</Text>
+              </Pressable>
+              <Pressable style={styles.issueResetCancelBtn} onPress={() => setIssueResetTargetId(null)}>
+                <Text style={styles.issueResetCancelBtnText}>닫기</Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
 
       {/* 배송 완료 취소 팝업 */}
       {undoTarget !== null && (() => {
@@ -750,6 +865,16 @@ const styles = StyleSheet.create({
   container:    { flex: 1, backgroundColor: colors.paper100 },
   header:       { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.black, paddingHorizontal: 12, paddingVertical: 10 },
   backBtn:      { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.orange, paddingVertical: 5, paddingHorizontal: 10, borderRadius: 20 },
+  searchToggleBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 5, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1.5, borderColor: colors.orange, backgroundColor: 'rgba(255,138,0,0.12)' },
+  searchToggleText: { fontSize: 12, color: colors.orange, fontWeight: '600' },
+  searchBar: { backgroundColor: colors.black, paddingHorizontal: 12, paddingBottom: 10, gap: 0 },
+  searchInputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.white, borderRadius: 10, borderWidth: 1.5, borderColor: colors.orange, paddingHorizontal: 10, paddingVertical: 6, gap: 6 },
+  searchInput: { flex: 1, fontSize: 14, color: colors.black, paddingVertical: 0 },
+  searchBtn: { marginTop: 6, backgroundColor: colors.orange, borderRadius: 10, paddingVertical: 9, alignItems: 'center' },
+  searchBtnText: { fontSize: 14, fontWeight: '700', color: colors.white },
+  suggestionsBox: { marginTop: 4, backgroundColor: colors.white, borderRadius: 10, overflow: 'hidden' },
+  suggestionItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: colors.paper100 },
+  suggestionText: { fontSize: 14, color: colors.black, flex: 1 },
   backBtnText:  { color: colors.white, fontSize: 16, fontWeight: '700' },
   headerCenter: { flex: 1, alignItems: 'center' },
   headerTitle:  { color: colors.white, fontSize: 15, fontWeight: '700' },
@@ -761,6 +886,7 @@ const styles = StyleSheet.create({
   topSection:   { backgroundColor: colors.white },
   listItem:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
   listItemSelected: { backgroundColor: colors.orange + '0F' },
+  listItemHighlighted: { backgroundColor: '#FFF3E0', borderLeftWidth: 3, borderLeftColor: colors.orange },
   listNum:      { width: 26, height: 26, borderRadius: 13, backgroundColor: colors.paper100, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
   listNumSelected: { backgroundColor: colors.orange },
   listNumText:  { fontSize: 12, fontWeight: '700', color: colors.black },
@@ -846,6 +972,31 @@ const styles = StyleSheet.create({
   doneText:     { fontSize: 13, fontWeight: '600', color: colors.green },
   issueCard:    { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.red + '15', borderRadius: 10, padding: 14, marginBottom: 10 },
   issueText:    { fontSize: 13, fontWeight: '600', color: colors.red, flex: 1 },
+  issueSection: { borderWidth: 1.5, borderColor: colors.red + '40', borderRadius: 12, padding: 14, marginBottom: 10, backgroundColor: colors.red + '08' },
+  issueHeader:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  issueTitle:   { fontSize: 14, fontWeight: '700', color: colors.red },
+  issueSubText: { fontSize: 12, color: colors.gray, marginTop: 1 },
+  issueActions: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  issueActionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 10, padding: 12 },
+  issueActionKakao: { backgroundColor: '#FEE500' },
+  issueActionEmoji: { fontSize: 22 },
+  issueActionLabel: { fontSize: 13, fontWeight: '700', color: colors.black },
+  issueActionSub:   { fontSize: 11, color: 'rgba(0,0,0,0.5)', marginTop: 1 },
+  issueResetBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8 },
+  issueResetText: { fontSize: 12, color: colors.gray },
+  issueResetModal: { backgroundColor: colors.white, borderRadius: 20, padding: 24, marginHorizontal: 24, alignItems: 'center' },
+  issueResetModalIcon: { marginBottom: 12 },
+  issueResetModalTitle: { fontSize: 17, fontWeight: '800', color: colors.black, marginBottom: 8, textAlign: 'center' },
+  issueResetModalDesc: { fontSize: 13, color: colors.gray, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
+  issueResetOption: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 14, padding: 16, marginBottom: 10 },
+  issueResetOptionPrimary: { backgroundColor: colors.orange },
+  issueResetOptionCancel: { backgroundColor: colors.white, borderWidth: 1.5, borderColor: colors.red },
+  issueResetOptionIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
+  issueResetOptionBody: { flex: 1 },
+  issueResetOptionTitle: { fontSize: 14, fontWeight: '800', color: colors.white, marginBottom: 2 },
+  issueResetOptionSub: { fontSize: 12, color: 'rgba(255,255,255,0.85)', lineHeight: 16 },
+  issueResetCancelBtn: { marginTop: 4, paddingVertical: 10, paddingHorizontal: 24 },
+  issueResetCancelBtnText: { fontSize: 14, color: colors.gray, fontWeight: '600' },
 
   // 하단 버튼 바
   panelBar:     { paddingHorizontal: 14, paddingTop: 8, paddingBottom: 12, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.border },
@@ -858,8 +1009,8 @@ const styles = StyleSheet.create({
   issueBtnText: { fontSize: 13, color: colors.red },
 
   // 배송 완료 취소 버튼
-  undoBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1.5, borderColor: colors.orange + '80', borderRadius: 12, paddingVertical: 13 },
-  undoBtnText:  { fontSize: 14, fontWeight: '600', color: colors.orange },
+  undoBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.red, borderRadius: 12, paddingVertical: 13 },
+  undoBtnText:  { fontSize: 14, fontWeight: '600', color: colors.white },
 
   // 취소 팝업
   undoModal:    { backgroundColor: colors.white, borderRadius: 16, padding: 20, width: '88%', gap: 12 },

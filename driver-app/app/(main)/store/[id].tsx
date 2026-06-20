@@ -678,9 +678,6 @@ export default function StoreDetailScreen() {
       noteLine,
       photoLine,
       ``,
-      `⚠️ 담당자 확인 및 처리 부탁드립니다.`,
-      ``,
-      `— DDMS 자동 알림`,
     ].filter((l) => l !== null).join('\n');
   }, [store, course.driver, pendingPhotos]);
 
@@ -1324,7 +1321,7 @@ export default function StoreDetailScreen() {
           </View>
         )}
 
-        {/* 이슈 초기화 모달 */}
+        {/* 이슈 초기화 확인 팝업 */}
         {showIssueResetModal && (
           <Modal visible transparent animationType="fade" onRequestClose={() => setShowIssueResetModal(false)}>
             <Pressable style={styles.issueOverlay} onPress={() => setShowIssueResetModal(false)}>
@@ -1332,12 +1329,10 @@ export default function StoreDetailScreen() {
                 <View style={styles.issueResetModalIcon}>
                   <Ionicons name="refresh-circle" size={36} color={colors.orange} />
                 </View>
-                <Text style={styles.issueResetModalTitle}>이슈를 어떻게 처리할까요?</Text>
+                <Text style={styles.issueResetModalTitle}>이슈를 초기화합니다</Text>
                 <Text style={styles.issueResetModalDesc}>
-                  채팅방에서 담당자 확인이 완료된 경우{'\n'}아래 옵션 중 하나를 선택해 주세요.
+                  이슈 상태가 해제되고 배송 대기 상태로 돌아갑니다.
                 </Text>
-
-                {/* 옵션 1: 다시 배송 */}
                 <Pressable
                   style={({ pressed }) => [styles.issueResetOption, styles.issueResetOptionPrimary, pressed && { opacity: 0.85 }]}
                   onPress={() => {
@@ -1345,33 +1340,8 @@ export default function StoreDetailScreen() {
                     resetIssueStore(store.id);
                   }}
                 >
-                  <View style={styles.issueResetOptionIcon}>
-                    <Ionicons name="arrow-undo" size={22} color={colors.white} />
-                  </View>
-                  <View style={styles.issueResetOptionBody}>
-                    <Text style={styles.issueResetOptionTitle}>다시 배송하기</Text>
-                    <Text style={styles.issueResetOptionSub}>이슈 해제 후 배송 완료 처리를 진행합니다</Text>
-                  </View>
+                  <Text style={[styles.issueResetOptionTitle, { textAlign: 'center', flex: 1 }]}>확인</Text>
                 </Pressable>
-
-                {/* 옵션 2: 취소 처리 */}
-                <Pressable
-                  style={({ pressed }) => [styles.issueResetOption, styles.issueResetOptionCancel, pressed && { opacity: 0.85 }]}
-                  onPress={() => {
-                    setShowIssueResetModal(false);
-                    cancelStore(store.id);
-                    router.back();
-                  }}
-                >
-                  <View style={[styles.issueResetOptionIcon, { backgroundColor: colors.red + '20' }]}>
-                    <Ionicons name="close-circle" size={22} color={colors.red} />
-                  </View>
-                  <View style={styles.issueResetOptionBody}>
-                    <Text style={[styles.issueResetOptionTitle, { color: colors.red }]}>취소 처리하기</Text>
-                    <Text style={styles.issueResetOptionSub}>오늘 목록에서 제거됩니다. 이력에는 이슈로 남습니다.</Text>
-                  </View>
-                </Pressable>
-
                 <Pressable style={styles.issueResetCancelBtn} onPress={() => setShowIssueResetModal(false)}>
                   <Text style={styles.issueResetCancelBtnText}>닫기</Text>
                 </Pressable>

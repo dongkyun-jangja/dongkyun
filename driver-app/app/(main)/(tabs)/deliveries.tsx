@@ -10,6 +10,7 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
@@ -37,18 +38,22 @@ interface DragItemProps {
   store: Store;
   isDragging: boolean;
   isDropTarget: boolean;
+  isHighlighted: boolean;
   isFirst: boolean;
   isLast: boolean;
   onPress: (id: string) => void;
-  onDragStart: (storeId: string, itemY: number) => void;
+  onDragStart: (storeId: string, itemY: number, fromHandle?: boolean) => void;
   onLayout: (storeId: string, y: number, height: number) => void;
   onMoveUp: (id: string) => void;
   onMoveDown: (id: string) => void;
+  onHandleGhostUpdate: (absoluteY: number, translationY: number) => void;
+  onHandleDragEnd: () => void;
 }
 
 function DragItem({
-  store, isDragging, isDropTarget, isFirst, isLast,
+  store, isDragging, isDropTarget, isHighlighted, isFirst, isLast,
   onPress, onDragStart, onLayout, onMoveUp, onMoveDown,
+  onHandleGhostUpdate, onHandleDragEnd,
 }: DragItemProps) {
   const rowRef = useRef<View>(null);
   const isDone = store.status === 'delivered';
@@ -69,6 +74,18 @@ function DragItem({
       onDragStart(store.id, py);
     });
   }, [store.id, onDragStart]);
+
+  // 핸들 Pan — 누른 채 바로 드래그
+  const handlePan = Gesture.Pan()
+    .runOnJS(true)
+    .minDistance(0)
+    .onStart(() => {
+      rowRef.current?.measure((_x, _y, _w, _h, _px, py) => {
+        onDragStart(store.id, py, true);
+      });
+    })
+    .onUpdate((e) => onHandleGhostUpdate(e.absoluteY, e.translationY))
+    .onEnd(onHandleDragEnd);
 
   const longPress = Gesture.LongPress()
     .minDuration(300)
@@ -114,6 +131,7 @@ function DragItem({
           styles.card,
           isDone && styles.cardDone,
           isDragging && styles.cardDragging,
+          isHighlighted && styles.cardHighlighted,
           pressed && !isDragging && styles.cardPressed,
         ]}
         onPress={() => onPress(store.id)}
@@ -153,15 +171,13 @@ function DragItem({
               </View>
             )}
           </View>
-          {/* 드래그 핸들 — 탭하면 즉시 드래그, pending 건만 */}
+          {/* 드래그 핸들 — 누른 채 바로 드래그, pending 건만 */}
           {isPending && (
-            <Pressable
-              style={({ pressed }) => [styles.dragHandle, pressed && { opacity: 0.5 }]}
-              onPress={startDrag}
-              hitSlop={8}
-            >
-              <Ionicons name="reorder-two" size={20} color={colors.gray} />
-            </Pressable>
+            <GestureDetector gesture={handlePan}>
+              <View style={styles.dragHandle}>
+                <Ionicons name="reorder-two" size={20} color={colors.gray} />
+              </View>
+            </GestureDetector>
           )}
         </View>
 
@@ -286,10 +302,18 @@ export default function DeliveriesScreen() {
   const ghostScale = useSharedValue(1);
   const draggingSharedId = useSharedValue<string | null>(null);
   const itemLayoutsRef = useRef<Map<string, { y: number; height: number }>>(new Map());
+  const draggingIdRef = useRef<string | null>(null);
+  const dragFromHandleRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const initialScrollDoneRef = useRef(false);
   // 드래그 안내 배너 dismiss 상태 (영구 저장)
   const [hintDismissed, setHintDismissed] = useState(false);
+
+  // ── 매장 검색
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [highlightedStoreId, setHighlightedStoreId] = useState<string | null>(null);
+  const searchInputRef = useRef<any>(null);
   useEffect(() => {
     AsyncStorage.getItem('@hint_dismissed_drag').then((v) => {
       if (v === '1') setHintDismissed(true);
@@ -344,7 +368,9 @@ export default function DeliveriesScreen() {
   }, []);
 
   // ── 드래그 시작
-  const handleDragStart = useCallback((storeId: string, itemY: number) => {
+  const handleDragStart = useCallback((storeId: string, itemY: number, fromHandle = false) => {
+    dragFromHandleRef.current = fromHandle;
+    draggingIdRef.current = storeId;
     setDraggingId(storeId);
     draggingSharedId.value = storeId;
     setScrollEnabled(false);
@@ -353,24 +379,27 @@ export default function DeliveriesScreen() {
     ghostScale.value = withSpring(1.04, { damping: 15 });
   }, [draggingSharedId, ghostY, ghostOpacity, ghostScale]);
 
-  // ── drop target 계산
-  const computeDropTarget = useCallback((fingerY: number) => {
+  // ── drop target 계산 (슬롯 델타 방식)
+  const computeDropTarget = useCallback((translationY: number) => {
+    const currentDraggingId = draggingIdRef.current;
+    if (!currentDraggingId) return;
+    const draggingIdx = sortedStores.findIndex((s) => s.id === currentDraggingId);
+    if (draggingIdx === -1) return;
     const layouts = itemLayoutsRef.current;
-    let closest = -1;
-    let closestDist = Infinity;
-    sortedStores.forEach((s, idx) => {
-      if (s.status !== 'pending') return;
-      const layout = layouts.get(s.id);
-      if (!layout) return;
-      const centerY = layout.y + layout.height / 2;
-      const dist = Math.abs(fingerY - centerY);
-      if (dist < closestDist) {
-        closestDist = dist;
-        closest = idx;
-      }
-    });
-    setDropTargetIdx(closest);
+    const heights = Array.from(layouts.values()).map((l) => l.height);
+    const avgHeight = heights.length > 0
+      ? heights.reduce((a, b) => a + b, 0) / heights.length
+      : 80;
+    const slotDelta = Math.round(translationY / avgHeight);
+    const targetIdx = Math.max(0, Math.min(sortedStores.length - 1, draggingIdx + slotDelta));
+    setDropTargetIdx(targetIdx);
   }, [sortedStores]);
+
+  // ── 핸들 드래그 업데이트
+  const handleGhostUpdate = useCallback((absoluteY: number, translationY: number) => {
+    ghostY.value = absoluteY - 60;
+    computeDropTarget(translationY);
+  }, [ghostY, computeDropTarget]);
 
   // ── 드래그 종료
   const handleDragEnd = useCallback(() => {
@@ -378,6 +407,8 @@ export default function DeliveriesScreen() {
       moveStoreTo(draggingId, dropTargetIdx + 1);
     }
     draggingSharedId.value = null;
+    draggingIdRef.current = null;
+    dragFromHandleRef.current = false;
     setDraggingId(null);
     setDropTargetIdx(-1);
     setScrollEnabled(true);
@@ -390,14 +421,14 @@ export default function DeliveriesScreen() {
     .onUpdate((e) => {
       if (!draggingSharedId.value) return;
       ghostY.value = e.absoluteY - 60;
-      runOnJS(computeDropTarget)(e.absoluteY);
+      runOnJS(computeDropTarget)(e.translationY);
     })
     .onEnd(() => {
       if (draggingSharedId.value) {
         runOnJS(handleDragEnd)();
       }
     })
-    .enabled(draggingId !== null);
+    .enabled(draggingId !== null && !dragFromHandleRef.current);
 
   const ghostStore = draggingId ? sortedStores.find((s) => s.id === draggingId) : null;
   const ghostAnimStyle = useAnimatedStyle(() => ({
@@ -407,6 +438,40 @@ export default function DeliveriesScreen() {
     ],
     opacity: ghostOpacity.value,
   }));
+
+  // 자동완성 후보
+  const searchSuggestions = useMemo(() => {
+    const q = searchQuery.trim();
+    if (!q) return [];
+    return sortedStores.filter((s) => s.name.toLowerCase().includes(q.toLowerCase())).slice(0, 5);
+  }, [searchQuery, sortedStores]);
+
+  const scrollToStore = useCallback((storeId: string) => {
+    const layout = itemLayoutsRef.current.get(storeId);
+    if (layout) {
+      const targetY = Math.max(0, layout.y - 120);
+      scrollRef.current?.scrollTo({ y: targetY, animated: true });
+    }
+    setHighlightedStoreId(storeId);
+    setShowSearch(false);
+    setSearchQuery('');
+    setTimeout(() => setHighlightedStoreId(null), 2000);
+  }, []);
+
+  const handleSearch = useCallback(() => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    const found = sortedStores.find((s) => s.name.toLowerCase().includes(q.toLowerCase()));
+    if (found) scrollToStore(found.id);
+  }, [searchQuery, sortedStores, scrollToStore]);
+
+  const toggleSearch = useCallback(() => {
+    setShowSearch((v) => {
+      if (!v) setTimeout(() => searchInputRef.current?.focus(), 100);
+      else setSearchQuery('');
+      return !v;
+    });
+  }, []);
 
   const handlePress = useCallback(
     (id: string) => router.push(`/(main)/store/${id}`),
@@ -448,13 +513,75 @@ export default function DeliveriesScreen() {
               <Text style={styles.title}>오늘 배송 목록</Text>
               <Text style={styles.date}>{formatDate(course.date)}</Text>
             </View>
-            <View style={styles.driverInfo}>
-              <Text style={styles.driverName}>{course.driver.name}</Text>
-              <Text style={styles.courseLabel}>
-                {course.driver.distributorName} · {course.driver.courseName}
-              </Text>
+            <View style={styles.headerRight}>
+              <View style={styles.driverInfo}>
+                <Text style={styles.driverName}>{course.driver.name}</Text>
+                <Text style={styles.courseLabel}>
+                  {course.driver.distributorName} · {course.driver.courseName}
+                </Text>
+              </View>
+              <Pressable
+                style={({ pressed }) => [styles.searchToggleBtn, pressed && { opacity: 0.6 }]}
+                onPress={toggleSearch}
+                hitSlop={8}
+              >
+                <Ionicons
+                  name={showSearch ? 'close-outline' : 'search-outline'}
+                  size={15}
+                  color={colors.orange}
+                />
+                <Text style={styles.searchToggleText}>
+                  매장명
+                </Text>
+              </Pressable>
             </View>
           </View>
+
+          {/* 검색 바 */}
+          {showSearch && (
+            <View style={styles.searchBar}>
+              <View style={styles.searchInputWrap}>
+                <Ionicons name="search-outline" size={15} color={colors.gray} />
+                <TextInput
+                  ref={searchInputRef}
+                  style={styles.searchInput}
+                  placeholder="매장명 검색"
+                  placeholderTextColor={colors.gray}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  onSubmitEditing={handleSearch}
+                  returnKeyType="search"
+                />
+                {searchQuery.length > 0 && (
+                  <Pressable onPress={() => setSearchQuery('')} hitSlop={6}>
+                    <Ionicons name="close-circle" size={16} color={colors.gray} />
+                  </Pressable>
+                )}
+              </View>
+              <Pressable
+                style={({ pressed }) => [styles.searchBtn, pressed && { opacity: 0.75 }]}
+                onPress={handleSearch}
+              >
+                <Text style={styles.searchBtnText}>검색</Text>
+              </Pressable>
+
+              {/* 자동완성 후보 */}
+              {searchSuggestions.length > 0 && (
+                <View style={styles.suggestionsBox}>
+                  {searchSuggestions.map((s) => (
+                    <Pressable
+                      key={s.id}
+                      style={({ pressed }) => [styles.suggestionItem, pressed && { backgroundColor: colors.paper100 }]}
+                      onPress={() => scrollToStore(s.id)}
+                    >
+                      <Ionicons name="location-outline" size={13} color={colors.orange} />
+                      <Text style={styles.suggestionText} numberOfLines={1}>{s.name}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
 
           {/* 진행률 */}
           <View style={styles.progressSection}>
@@ -515,6 +642,7 @@ export default function DeliveriesScreen() {
                 store={store}
                 isDragging={draggingId === store.id}
                 isDropTarget={dropTargetIdx === idx && draggingId !== null && draggingId !== store.id}
+                isHighlighted={highlightedStoreId === store.id}
                 isFirst={isFirst}
                 isLast={isLast}
                 onPress={handlePress}
@@ -522,6 +650,8 @@ export default function DeliveriesScreen() {
                 onLayout={handleItemLayout}
                 onMoveUp={handleMoveUp}
                 onMoveDown={handleMoveDown}
+                onHandleGhostUpdate={handleGhostUpdate}
+                onHandleDragEnd={handleDragEnd}
               />
             );
           })}
@@ -582,6 +712,81 @@ const styles = StyleSheet.create({
   },
   driverInfo: {
     alignItems: 'flex-end',
+  },
+  headerRight: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  searchToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: colors.orange,
+    backgroundColor: 'rgba(255,138,0,0.08)',
+  },
+  searchToggleText: {
+    fontSize: 12,
+    color: colors.orange,
+    fontWeight: '600',
+  },
+  searchBar: {
+    marginTop: 8,
+    gap: 0,
+  },
+  searchInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.orange,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 6,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.black,
+    paddingVertical: 0,
+  },
+  searchBtn: {
+    marginTop: 6,
+    backgroundColor: colors.orange,
+    borderRadius: 10,
+    paddingVertical: 9,
+    alignItems: 'center',
+  },
+  searchBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.white,
+  },
+  suggestionsBox: {
+    marginTop: 4,
+    backgroundColor: colors.white,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.paper100,
+    overflow: 'hidden',
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.paper100,
+  },
+  suggestionText: {
+    fontSize: 14,
+    color: colors.black,
+    flex: 1,
   },
   driverName: {
     fontSize: 15,
@@ -742,6 +947,11 @@ const styles = StyleSheet.create({
   cardDragging: {
     opacity: 0.35,
     backgroundColor: colors.paper100,
+  },
+  cardHighlighted: {
+    backgroundColor: '#FFF3E0',
+    borderWidth: 1.5,
+    borderColor: colors.orange,
   },
   cardPressed: {
     backgroundColor: colors.paper100,
