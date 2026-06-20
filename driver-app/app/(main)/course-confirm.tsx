@@ -51,11 +51,11 @@ interface DragItemProps {
   total: number;
   isDragging: boolean;
   isDropTarget: boolean;
-  onDragStart: (storeId: string, itemY: number, fromHandle?: boolean, startFingerY?: number) => void;
+  onDragStart: (storeId: string, itemY: number, fromHandle?: boolean) => void;
   onLayout: (storeId: string, y: number, height: number) => void;
   onOrderCircleTap: (storeId: string, currentOrder: number) => void;
   onPhonePress: (phone: string) => void;
-  onHandleGhostUpdate: (absoluteY: number) => void;
+  onHandleGhostUpdate: (absoluteY: number, translationY: number) => void;
   onHandleDragEnd: () => void;
 }
 
@@ -84,12 +84,12 @@ function DragItem({
   const handlePan = Gesture.Pan()
     .runOnJS(true)
     .minDistance(0)
-    .onStart((e) => {
+    .onStart(() => {
       rowRef.current?.measure((_x, _y, _w, _h, _px, py) => {
-        onDragStart(store.id, py, true, e.absoluteY);
+        onDragStart(store.id, py, true);
       });
     })
-    .onUpdate((e) => onHandleGhostUpdate(e.absoluteY))
+    .onUpdate((e) => onHandleGhostUpdate(e.absoluteY, e.translationY))
     .onEnd(onHandleDragEnd);
 
   // 카드 전체 롱프레스 → 드래그
@@ -220,9 +220,8 @@ export default function CourseConfirmScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   // 핸들 Pan 드래그 여부 — screenPan과 중복 방지
   const dragFromHandleRef = useRef(false);
-  // 드래그 시작 시점의 아이템 위치 + 손가락 위치 (delta 기반 drop 계산용)
-  const dragStartItemYRef = useRef(0);
-  const dragStartFingerYRef = useRef(0);
+  // 드래그 중인 아이템 id ref (state는 비동기, drop 계산에 즉시 필요)
+  const draggingIdRef = useRef<string | null>(null);
 
   // ── 번호 입력 모달 상태
   const [moveModal, setMoveModal] = useState<{ storeId: string; current: number } | null>(null);
@@ -271,10 +270,9 @@ export default function CourseConfirmScreen() {
   }, []);
 
   // ── 드래그 시작
-  const handleDragStart = useCallback((storeId: string, itemY: number, fromHandle = false, startFingerY?: number) => {
+  const handleDragStart = useCallback((storeId: string, itemY: number, fromHandle = false) => {
     dragFromHandleRef.current = fromHandle;
-    dragStartItemYRef.current = itemY;
-    dragStartFingerYRef.current = startFingerY ?? itemY;
+    draggingIdRef.current = storeId;
     setDraggingId(storeId);
     draggingSharedId.value = storeId;
     setScrollEnabled(false);
@@ -283,27 +281,27 @@ export default function CourseConfirmScreen() {
     ghostScale.value = withSpring(1.04, { damping: 15 });
   }, [draggingSharedId, ghostY, ghostOpacity, ghostScale]);
 
-  // ── 드래그 중 drop target 계산 (delta 기반 — 좌표계 불일치 영향 없음)
-  const computeDropTarget = useCallback((fingerY: number) => {
-    const layouts = itemLayoutsRef.current;
-    // 손가락 이동량 → 드래그 중인 아이템의 "현재 위치" 추정
-    const fingerDelta = fingerY - dragStartFingerYRef.current;
-    const estimatedItemY = dragStartItemYRef.current + fingerDelta;
+  // ── 드래그 중 drop target 계산 (슬롯 델타 방식 — 좌표계 무관)
+  // translationY: 드래그 시작 기준 이동량 (아래 = +, 위 = -)
+  const computeDropTarget = useCallback((translationY: number) => {
+    const currentDraggingId = draggingIdRef.current;
+    if (!currentDraggingId) return;
 
-    let closest = -1;
-    let closestDist = Infinity;
-    sortedStores.forEach((s, idx) => {
-      const layout = layouts.get(s.id);
-      if (!layout) return;
-      // 모든 아이템 위치는 동일 시점에 측정 → 상대 위치는 정확
-      const centerY = layout.y + layout.height / 2;
-      const dist = Math.abs(estimatedItemY - centerY);
-      if (dist < closestDist) {
-        closestDist = dist;
-        closest = idx;
-      }
-    });
-    setDropTargetIdx(closest);
+    const draggingIdx = sortedStores.findIndex((s) => s.id === currentDraggingId);
+    if (draggingIdx === -1) return;
+
+    // 저장된 아이템 높이로 평균 산출
+    const layouts = itemLayoutsRef.current;
+    const heights = Array.from(layouts.values()).map((l) => l.height);
+    const avgHeight = heights.length > 0
+      ? heights.reduce((a, b) => a + b, 0) / heights.length
+      : 80;
+
+    // translationY / 평균높이 → 몇 칸 이동했는지
+    const slotDelta = Math.round(translationY / avgHeight);
+    const targetIdx = Math.max(0, Math.min(sortedStores.length - 1, draggingIdx + slotDelta));
+
+    setDropTargetIdx(targetIdx);
   }, [sortedStores]);
 
   // ── 드래그 종료
@@ -325,9 +323,9 @@ export default function CourseConfirmScreen() {
   // Reanimated 4: onUpdate/onEnd는 worklet → JS state 접근 불가 → draggingSharedId 사용
   const screenPan = Gesture.Pan()
     .onUpdate((e) => {
-      if (!draggingSharedId.value) return;  // shared value로 체크
+      if (!draggingSharedId.value) return;
       ghostY.value = e.absoluteY - 60;
-      runOnJS(computeDropTarget)(e.absoluteY);
+      runOnJS(computeDropTarget)(e.translationY);
     })
     .onEnd(() => {
       if (draggingSharedId.value) {  // shared value로 체크
@@ -346,10 +344,10 @@ export default function CourseConfirmScreen() {
     opacity: ghostOpacity.value,
   }));
 
-  // ── 핸들 Pan용 콜백
-  const handleGhostUpdate = useCallback((absoluteY: number) => {
+  // ── 핸들 Pan용 콜백 (ghost 위치는 absoluteY, drop 계산은 translationY)
+  const handleGhostUpdate = useCallback((absoluteY: number, translationY: number) => {
     ghostY.value = absoluteY - 60;
-    computeDropTarget(absoluteY);
+    computeDropTarget(translationY);
   }, [ghostY, computeDropTarget]);
 
   // ── 번호 입력 이동
