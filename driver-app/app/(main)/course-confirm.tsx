@@ -51,15 +51,20 @@ interface DragItemProps {
   total: number;
   isDragging: boolean;
   isDropTarget: boolean;
+  isHandleActive: boolean;
   onDragStart: (storeId: string, itemY: number) => void;
   onLayout: (storeId: string, y: number, height: number) => void;
   onOrderCircleTap: (storeId: string, currentOrder: number) => void;
   onPhonePress: (phone: string) => void;
+  onHandleTap: (storeId: string) => void;
+  onMoveUp: (storeId: string) => void;
+  onMoveDown: (storeId: string) => void;
 }
 
 function DragItem({
-  store, idx, total, isDragging, isDropTarget,
+  store, idx, total, isDragging, isDropTarget, isHandleActive,
   onDragStart, onLayout, onOrderCircleTap, onPhonePress,
+  onHandleTap, onMoveUp, onMoveDown,
 }: DragItemProps) {
   const isFirst = idx === 0;
   const isLast = idx === total - 1;
@@ -132,14 +137,33 @@ function DragItem({
               )}
             </View>
 
-            {/* 드래그 핸들 — 탭 즉시 드래그 시작 */}
-            <Pressable
-              style={({ pressed }) => [styles.dragHandle, pressed && { opacity: 0.5 }]}
-              onPress={startDrag}
-              hitSlop={4}
-            >
-              <Ionicons name="reorder-three" size={22} color={colors.border} />
-            </Pressable>
+            {/* 핸들 영역 — 탭하면 ▲▼ 표시, 활성화 시 위아래 이동 버튼 */}
+            {isHandleActive ? (
+              <View style={styles.moveButtons}>
+                <Pressable
+                  style={[styles.moveBtn, isFirst && styles.moveBtnDisabled]}
+                  onPress={() => !isFirst && onMoveUp(store.id)}
+                  hitSlop={4}
+                >
+                  <Ionicons name="chevron-up" size={18} color={isFirst ? colors.border : colors.orange} />
+                </Pressable>
+                <Pressable
+                  style={[styles.moveBtn, isLast && styles.moveBtnDisabled]}
+                  onPress={() => !isLast && onMoveDown(store.id)}
+                  hitSlop={4}
+                >
+                  <Ionicons name="chevron-down" size={18} color={isLast ? colors.border : colors.orange} />
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                style={({ pressed }) => [styles.dragHandle, pressed && { opacity: 0.5 }]}
+                onPress={() => onHandleTap(store.id)}
+                hitSlop={4}
+              >
+                <Ionicons name="reorder-three" size={22} color={colors.gray} />
+              </Pressable>
+            )}
           </View>
 
           {/* 상품 칩 */}
@@ -205,6 +229,9 @@ export default function CourseConfirmScreen() {
   const itemLayoutsRef = useRef<Map<string, { y: number; height: number }>>(new Map());
   const scrollOffsetRef = useRef(0);
   const scrollViewRef = useRef<ScrollView>(null);
+
+  // ── 핸들 탭 → ▲▼ 버튼 활성화 상태
+  const [activeHandleId, setActiveHandleId] = useState<string | null>(null);
 
   // ── 번호 입력 모달 상태
   const [moveModal, setMoveModal] = useState<{ storeId: string; current: number } | null>(null);
@@ -318,6 +345,23 @@ export default function CourseConfirmScreen() {
     ],
     opacity: ghostOpacity.value,
   }));
+
+  // ── ▲▼ 핸들 탭 토글 / 이동
+  const handleHandleTap = useCallback((storeId: string) => {
+    setActiveHandleId((prev) => (prev === storeId ? null : storeId));
+  }, []);
+
+  const handleMoveUp = useCallback((storeId: string) => {
+    const store = sortedStores.find((s) => s.id === storeId);
+    if (!store || store.order <= 1) return;
+    moveStoreTo(storeId, store.order - 1);
+  }, [sortedStores, moveStoreTo]);
+
+  const handleMoveDown = useCallback((storeId: string) => {
+    const store = sortedStores.find((s) => s.id === storeId);
+    if (!store || store.order >= sortedStores.length) return;
+    moveStoreTo(storeId, store.order + 1);
+  }, [sortedStores, moveStoreTo]);
 
   // ── 번호 입력 이동
   const handleMoveConfirm = () => {
@@ -578,9 +622,11 @@ export default function CourseConfirmScreen() {
         <View style={styles.notice}>
           <Ionicons name="information-circle-outline" size={15} color={colors.orange} />
           <Text style={styles.noticeText}>
-            순서 변경: <Text style={styles.noticeEmphasis}>≡ 탭</Text> 또는 <Text style={styles.noticeEmphasis}>카드 길게 누르면 드래그</Text>
+            순서 변경: <Text style={styles.noticeEmphasis}>≡ 탭 → ▲▼ 위아래 이동</Text>
             {' · '}
             <Text style={styles.noticeEmphasis}>번호 탭하면 직접 입력</Text>
+            {' · '}
+            <Text style={styles.noticeEmphasis}>길게 누르면 드래그</Text>
           </Text>
         </View>
 
@@ -602,13 +648,18 @@ export default function CourseConfirmScreen() {
               total={sortedStores.length}
               isDragging={draggingId === store.id}
               isDropTarget={dropTargetIdx === idx && draggingId !== null && draggingId !== store.id}
+              isHandleActive={activeHandleId === store.id}
               onDragStart={handleDragStart}
               onLayout={handleItemLayout}
               onOrderCircleTap={(id, order) => {
+                setActiveHandleId(null);
                 setMoveModal({ storeId: id, current: order });
                 setMoveInput(String(order));
               }}
               onPhonePress={(phone) => Linking.openURL(`tel:${phone}`)}
+              onHandleTap={handleHandleTap}
+              onMoveUp={handleMoveUp}
+              onMoveDown={handleMoveDown}
             />
           ))}
           <View style={{ height: 120 }} />
@@ -790,6 +841,19 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     marginRight: -4,
   },
+
+  // ▲▼ 이동 버튼
+  moveButtons: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 0,
+    marginRight: -4,
+  },
+  moveBtn: {
+    width: 36, height: 22,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  moveBtnDisabled: { opacity: 0.3 },
 
   // 상품 칩
   itemsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
