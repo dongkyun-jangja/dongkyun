@@ -51,15 +51,18 @@ interface DragItemProps {
   total: number;
   isDragging: boolean;
   isDropTarget: boolean;
-  onDragStart: (storeId: string, itemY: number) => void;
+  onDragStart: (storeId: string, itemY: number, fromHandle?: boolean) => void;
   onLayout: (storeId: string, y: number, height: number) => void;
   onOrderCircleTap: (storeId: string, currentOrder: number) => void;
   onPhonePress: (phone: string) => void;
+  onHandleGhostUpdate: (absoluteY: number) => void;
+  onHandleDragEnd: () => void;
 }
 
 function DragItem({
   store, idx, total, isDragging, isDropTarget,
   onDragStart, onLayout, onOrderCircleTap, onPhonePress,
+  onHandleGhostUpdate, onHandleDragEnd,
 }: DragItemProps) {
   const isFirst = idx === 0;
   const isLast = idx === total - 1;
@@ -76,6 +79,20 @@ function DragItem({
       onDragStart(store.id, py);
     });
   }, [store.id, onDragStart]);
+
+  const startDragFromHandle = useCallback(() => {
+    rowRef.current?.measure((_x, _y, _w, _h, _px, py) => {
+      onDragStart(store.id, py, true);
+    });
+  }, [store.id, onDragStart]);
+
+  // 핸들 Pan — 누르는 순간부터 바로 드래그
+  const handlePan = Gesture.Pan()
+    .runOnJS(true)
+    .minDistance(0)
+    .onStart(startDragFromHandle)
+    .onUpdate((e) => onHandleGhostUpdate(e.absoluteY))
+    .onEnd(onHandleDragEnd);
 
   // 카드 전체 롱프레스 → 드래그
   const cardLongPress = Gesture.LongPress()
@@ -132,14 +149,12 @@ function DragItem({
               )}
             </View>
 
-            {/* 드래그 핸들 — 탭 즉시 드래그 시작 */}
-            <Pressable
-              style={({ pressed }) => [styles.dragHandle, pressed && { opacity: 0.5 }]}
-              onPress={startDrag}
-              hitSlop={4}
-            >
-              <Ionicons name="reorder-three" size={22} color={colors.border} />
-            </Pressable>
+            {/* 드래그 핸들 — 누른 채 밀면 바로 드래그 */}
+            <GestureDetector gesture={handlePan}>
+              <View style={styles.dragHandle}>
+                <Ionicons name="reorder-three" size={22} color={colors.gray} />
+              </View>
+            </GestureDetector>
           </View>
 
           {/* 상품 칩 */}
@@ -205,6 +220,8 @@ export default function CourseConfirmScreen() {
   const itemLayoutsRef = useRef<Map<string, { y: number; height: number }>>(new Map());
   const scrollOffsetRef = useRef(0);
   const scrollViewRef = useRef<ScrollView>(null);
+  // 핸들 Pan 드래그 여부 — screenPan과 중복 방지
+  const dragFromHandleRef = useRef(false);
 
   // ── 번호 입력 모달 상태
   const [moveModal, setMoveModal] = useState<{ storeId: string; current: number } | null>(null);
@@ -253,9 +270,10 @@ export default function CourseConfirmScreen() {
   }, []);
 
   // ── 드래그 시작
-  const handleDragStart = useCallback((storeId: string, itemY: number) => {
+  const handleDragStart = useCallback((storeId: string, itemY: number, fromHandle = false) => {
+    dragFromHandleRef.current = fromHandle;
     setDraggingId(storeId);
-    draggingSharedId.value = storeId;  // worklet에서 참조할 shared value 동기화
+    draggingSharedId.value = storeId;
     setScrollEnabled(false);
     ghostY.value = itemY;
     ghostOpacity.value = withSpring(1, { damping: 20 });
@@ -286,7 +304,8 @@ export default function CourseConfirmScreen() {
       const targetOrder = dropTargetIdx + 1;
       moveStoreTo(draggingId, targetOrder);
     }
-    draggingSharedId.value = null;  // shared value 초기화
+    dragFromHandleRef.current = false;
+    draggingSharedId.value = null;
     setDraggingId(null);
     setDropTargetIdx(-1);
     setScrollEnabled(true);
@@ -307,7 +326,7 @@ export default function CourseConfirmScreen() {
         runOnJS(handleDragEnd)();
       }
     })
-    .enabled(draggingId !== null);
+    .enabled(draggingId !== null && !dragFromHandleRef.current);
 
   // ── ghost 애니메이션 스타일
   const ghostStore = draggingId ? sortedStores.find((s) => s.id === draggingId) : null;
@@ -318,6 +337,12 @@ export default function CourseConfirmScreen() {
     ],
     opacity: ghostOpacity.value,
   }));
+
+  // ── 핸들 Pan용 콜백
+  const handleGhostUpdate = useCallback((absoluteY: number) => {
+    ghostY.value = absoluteY - 60;
+    computeDropTarget(absoluteY);
+  }, [ghostY, computeDropTarget]);
 
   // ── 번호 입력 이동
   const handleMoveConfirm = () => {
@@ -609,6 +634,8 @@ export default function CourseConfirmScreen() {
                 setMoveInput(String(order));
               }}
               onPhonePress={(phone) => Linking.openURL(`tel:${phone}`)}
+              onHandleGhostUpdate={handleGhostUpdate}
+              onHandleDragEnd={handleDragEnd}
             />
           ))}
           <View style={{ height: 120 }} />
