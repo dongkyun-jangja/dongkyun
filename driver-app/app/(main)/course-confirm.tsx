@@ -26,6 +26,7 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../src/constants/colors';
 import { useDelivery } from '../../src/context/DeliveryContext';
+import { NotesModal } from '../../src/components/NotesModal';
 import { useNotes } from '../../src/hooks/useNotes';
 
 if (Platform.OS === 'android') {
@@ -229,6 +230,7 @@ export default function CourseConfirmScreen() {
 
   const { uncheckedCount } = useNotes();
   const [showUncheckedMemoWarn, setShowUncheckedMemoWarn] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
 
   const handleConfirm = () => {
     if (uncheckedCount > 0) {
@@ -668,33 +670,38 @@ export default function CourseConfirmScreen() {
             </Text>
           </Pressable>
         </View>
-      </SafeAreaView>
 
-      {/* 미확인 메모 경고 팝업 */}
-      <Modal visible={showUncheckedMemoWarn} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>확인하지 않은 메모가 있어요</Text>
-            <Text style={styles.modalMessage}>
-              {`체크되지 않은 메모가 ${uncheckedCount}개 있습니다.\n그래도 출발하시겠어요?`}
-            </Text>
-            <View style={styles.modalButtons}>
-              <Pressable
-                style={[styles.modalBtn, styles.modalBtnNo]}
-                onPress={() => setShowUncheckedMemoWarn(false)}
-              >
-                <Text style={styles.modalBtnNoText}>취소</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.modalBtn, styles.modalBtnYes]}
-                onPress={handleConfirmAfterWarn}
-              >
-                <Text style={styles.modalBtnYesText}>출발</Text>
-              </Pressable>
+        {/* 미확인 메모 경고 팝업 */}
+        <NotesModal visible={showNotes} onClose={() => setShowNotes(false)} />
+
+        <Modal visible={showUncheckedMemoWarn} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalBox}>
+              <Text style={styles.modalTitle}>확인하지 않은 메모가 있어요</Text>
+              <Text style={styles.modalMessage}>
+                {`체크되지 않은 메모가 ${uncheckedCount}개 있습니다.\n확인 후 출발해 주세요.`}
+              </Text>
+              <View style={styles.modalButtons}>
+                <Pressable
+                  style={[styles.modalBtn, styles.modalBtnNo]}
+                  onPress={() => {
+                    setShowUncheckedMemoWarn(false);
+                    setShowNotes(true);
+                  }}
+                >
+                  <Text style={styles.modalBtnNoText}>메모 열기</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.modalBtn, styles.modalBtnYes]}
+                  onPress={handleConfirmAfterWarn}
+                >
+                  <Text style={styles.modalBtnYesText}>출발</Text>
+                </Pressable>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      </SafeAreaView>
     </GestureDetector>
   );
 }
@@ -1046,7 +1053,7 @@ const styles = StyleSheet.create({
     flex: 1,
     width: undefined,
     marginTop: 0,
-    backgroundColor: colors.red50,
+    backgroundColor: colors.orange,
   },
   modalBtnYesText: { fontSize: 15, fontWeight: '700', color: colors.white },
 });
