@@ -2,9 +2,10 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useRef, useMemo, useState } from 'react';
 import {
   Alert,
+  Animated,
   Dimensions,
   Image,
   Linking,
@@ -496,6 +497,24 @@ export default function SplitDeliveryScreen() {
     [sortedStores, selectedId],
   );
 
+  // 배송 완료 팝업
+  const [showDonePopup, setShowDonePopup] = useState(false);
+  const donePopupAnim = useRef(new Animated.Value(0)).current;
+  const pendingNavRef = useRef<(() => void) | null>(null);
+
+  const showDeliveryDonePopup = useCallback((onDone: () => void) => {
+    pendingNavRef.current = onDone;
+    setShowDonePopup(true);
+    Animated.sequence([
+      Animated.timing(donePopupAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.delay(3000),
+      Animated.timing(donePopupAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
+    ]).start(() => {
+      setShowDonePopup(false);
+      pendingNavRef.current?.();
+    });
+  }, [donePopupAnim]);
+
   const doneCount = sortedStores.filter((s) => s.status === 'delivered').length;
   const totalCount = sortedStores.length;
 
@@ -505,14 +524,15 @@ export default function SplitDeliveryScreen() {
       const nextPending = sortedStores.find(
         (s) => s.status === 'pending' && s.id !== id,
       );
-      if (nextPending) {
-        setSelectedId(nextPending.id);
-      } else {
-        // 모든 배송 완료 → 대시보드로 자동 이동
-        router.replace('/(main)/(tabs)/dashboard');
-      }
+      showDeliveryDonePopup(() => {
+        if (nextPending) {
+          setSelectedId(nextPending.id);
+        } else {
+          router.replace('/(main)/(tabs)/dashboard');
+        }
+      });
     },
-    [updateStoreStatus, sortedStores, router],
+    [updateStoreStatus, sortedStores, router, showDeliveryDonePopup],
   );
 
   const handleUndoConfirm = useCallback(() => {
@@ -826,6 +846,37 @@ export default function SplitDeliveryScreen() {
         );
       })()}
       <NotesModal visible={showNotes} onClose={() => setShowNotes(false)} />
+
+      {/* 배송 완료 팝업 */}
+      {showDonePopup && (
+        <Pressable
+          style={styles.donePopupOverlay}
+          onPress={() => {
+            donePopupAnim.stopAnimation();
+            setShowDonePopup(false);
+            pendingNavRef.current?.();
+          }}
+        >
+          <Animated.View
+            style={[
+              styles.donePopupBox,
+              {
+                opacity: donePopupAnim,
+                transform: [{
+                  scale: donePopupAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.88, 1],
+                  }),
+                }],
+              },
+            ]}
+          >
+            <Ionicons name="checkmark-circle" size={48} color={colors.green} />
+            <Text style={styles.donePopupTitle}>배송 완료 처리되었습니다.</Text>
+            <Text style={styles.donePopupSub}>다음으로 넘어갑니다</Text>
+          </Animated.View>
+        </Pressable>
+      )}
     </SafeAreaView>
   );
 }
@@ -1012,4 +1063,37 @@ const styles = StyleSheet.create({
   confirmBtnText:{ color: colors.white, fontSize: 15, fontWeight: '700' },
   confirmCancelBtn:{ paddingVertical: 8 },
   confirmCancelText:{ fontSize: 13, color: colors.gray },
+
+  donePopupOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  donePopupBox: {
+    backgroundColor: colors.white,
+    borderRadius: 24,
+    paddingHorizontal: 40,
+    paddingVertical: 36,
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: 40,
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  donePopupTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.black,
+    textAlign: 'center',
+  },
+  donePopupSub: {
+    fontSize: 14,
+    color: colors.gray,
+    fontWeight: '500',
+  },
 });

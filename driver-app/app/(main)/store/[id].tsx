@@ -303,17 +303,19 @@ export default function StoreDetailScreen() {
       setToastKind(kind);
       setToastVisible(true);
 
-      Animated.sequence([
-        Animated.timing(toastAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
-        Animated.delay(2800),
-        Animated.timing(toastAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
-      ]).start(() => {
+      const navigate = () => {
         if (nextPending) {
           router.replace(`/(main)/store/${nextPending.id}` as any);
         } else {
           router.replace('/(main)/(tabs)/dashboard');
         }
-      });
+      };
+
+      Animated.sequence([
+        Animated.timing(toastAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+        Animated.delay(3000),
+        Animated.timing(toastAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
+      ]).start(() => navigate());
     },
     [store, course.stores, toastAnim, router],
   );
@@ -1547,8 +1549,10 @@ export default function StoreDetailScreen() {
       {/* 배송 완료 토스트 — 탭하면 즉시 이동 */}
       {toastVisible && (
         <Pressable
+          style={styles.deliveryDoneOverlay}
           onPress={() => {
             toastAnim.stopAnimation();
+            setToastVisible(false);
             if (nextStoreId) {
               router.replace(`/(main)/store/${nextStoreId}` as any);
             } else {
@@ -1558,39 +1562,21 @@ export default function StoreDetailScreen() {
         >
           <Animated.View
             style={[
-              styles.toast,
+              styles.deliveryDonePopup,
               {
                 opacity: toastAnim,
                 transform: [{
-                  translateY: toastAnim.interpolate({
+                  scale: toastAnim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [20, 0],
+                    outputRange: [0.88, 1],
                   }),
                 }],
               },
             ]}
           >
-            <Ionicons
-              name={toastKind === 'pickup-issue' ? 'alert-circle' : 'checkmark-circle'}
-              size={18}
-              color={colors.white}
-            />
-            <View style={{ flex: 1 }}>
-              {remainingCount > 0 ? (
-                <>
-                  <Text style={styles.toastText}>
-                    {toastKind === 'delivered' && `${completedOrder}/${course.stores.length} 완료`}
-                    {toastKind === 'pickup-collected' && `${completedOrder}/${course.stores.length} · 회수 완료`}
-                    {toastKind === 'pickup-issue' && `${completedOrder}/${course.stores.length} · 회수 미완료 공유됨`}
-                  </Text>
-                  {nextStoreName && (
-                    <Text style={styles.toastSub} numberOfLines={1}>다음 → {nextStoreName}</Text>
-                  )}
-                </>
-              ) : (
-                <Text style={styles.toastText}>오늘 배송 모두 완료! 🎉</Text>
-              )}
-            </View>
+            <Ionicons name="checkmark-circle" size={48} color={colors.green} />
+            <Text style={styles.deliveryDoneTitle}>배송 완료 처리되었습니다.</Text>
+            <Text style={styles.deliveryDoneSub}>다음으로 넘어갑니다</Text>
           </Animated.View>
         </Pressable>
       )}
@@ -2741,32 +2727,36 @@ const styles = StyleSheet.create({
   },
 
   // 완료 토스트
-  toast: {
+  deliveryDoneOverlay: {
     position: 'absolute',
-    bottom: 100,
-    alignSelf: 'center',
-    flexDirection: 'row',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: colors.black,
+  },
+  deliveryDonePopup: {
+    backgroundColor: colors.white,
     borderRadius: 24,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: 40,
+    paddingVertical: 36,
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: 40,
     shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 12,
   },
-  toastText: {
+  deliveryDoneTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.black,
+    textAlign: 'center',
+  },
+  deliveryDoneSub: {
     fontSize: 14,
-    fontWeight: '700',
-    color: colors.white,
-  },
-  toastSub: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.85)',
-    marginTop: 2,
+    color: colors.gray,
     fontWeight: '500',
   },
 
