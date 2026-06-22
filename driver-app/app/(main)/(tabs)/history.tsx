@@ -207,7 +207,7 @@ function StoreDetailRow({
 
 // ─── 메인 화면 ──────────────────────────────────────────────────────
 export default function HistoryScreen() {
-  const { allCourses, goToDate } = useDelivery();
+  const { allCourses } = useDelivery();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [viewMode, setViewMode] = useState<'list' | 'calendar' | 'store'>('list');
@@ -270,9 +270,8 @@ export default function HistoryScreen() {
   const todayIndex = allCourses.length - 1;
 
   const handleDatePress = useCallback((index: number) => {
-    goToDate(index);
     setExpandedIndex(prev => prev === index ? null : index);
-  }, [goToDate]);
+  }, []);
 
   const minMonth = new Date(today.getFullYear(), today.getMonth() - 2, 1);
   const canGoPrev = new Date(calYear, calMonth, 1) > minMonth;
@@ -572,7 +571,6 @@ export default function HistoryScreen() {
                     onPress={() => {
                       if (!dateStr || !courseForDay) return;
                       setSelectedDate(prev => prev === dateStr ? null : dateStr);
-                      goToDate(courseForDay.index);
                     }}
                   />
                 );

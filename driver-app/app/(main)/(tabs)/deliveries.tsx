@@ -23,8 +23,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBadge } from '../../../src/components/StatusBadge';
+import { NotesModal } from '../../../src/components/NotesModal';
 import { colors } from '../../../src/constants/colors';
 import { useDelivery } from '../../../src/context/DeliveryContext';
+import { useNotes } from '../../../src/hooks/useNotes';
 import { Store } from '../../../src/types';
 
 function formatDate(dateStr: string) {
@@ -311,6 +313,8 @@ export default function DeliveriesScreen() {
 
   // ── 매장 검색
   const [showSearch, setShowSearch] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+  const { uncheckedCount } = useNotes();
   const [searchQuery, setSearchQuery] = useState('');
   const [highlightedStoreId, setHighlightedStoreId] = useState<string | null>(null);
   const searchInputRef = useRef<any>(null);
@@ -522,6 +526,16 @@ export default function DeliveriesScreen() {
               </View>
               <Pressable
                 style={({ pressed }) => [styles.searchToggleBtn, pressed && { opacity: 0.6 }]}
+                onPress={() => setShowNotes(true)}
+                hitSlop={8}
+              >
+                <Ionicons name="create-outline" size={15} color={colors.orange} />
+                {uncheckedCount > 0 && (
+                  <View style={{ position: 'absolute', top: -3, right: -3, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.red }} />
+                )}
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.searchToggleBtn, pressed && { opacity: 0.6 }]}
                 onPress={toggleSearch}
                 hitSlop={8}
               >
@@ -657,7 +671,8 @@ export default function DeliveriesScreen() {
           })}
           <View style={{ height: 40 }} />
         </ScrollView>
-      </SafeAreaView>
+      <NotesModal visible={showNotes} onClose={() => setShowNotes(false)} />
+    </SafeAreaView>
     </GestureDetector>
   );
 }

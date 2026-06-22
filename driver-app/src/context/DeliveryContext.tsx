@@ -27,7 +27,6 @@ interface DeliveryContextType {
   moveStoreUp: (storeId: string) => void;
   moveStoreDown: (storeId: string) => void;
   moveStoreTo: (storeId: string, targetOrder: number) => void;
-  updateDriverNote: (storeId: string, note: string) => void;
   updateItemQuantity: (storeId: string, itemCode: string, actualQty: number | null) => void;
   updateItemBags: (storeId: string, itemCode: string, actualBags: number | null) => void;
   updatePickupStatus: (
@@ -284,23 +283,6 @@ export function DeliveryProvider({ children }: { children: React.ReactNode }) {
     [dateIndex],
   );
 
-  const updateDriverNote = useCallback(
-    (storeId: string, note: string) => {
-      setCourses((prev) =>
-        prev.map((c, idx) => {
-          if (idx !== dateIndex) return c;
-          return {
-            ...c,
-            stores: c.stores.map((s) =>
-              s.id === storeId ? { ...s, driverNote: note } : s,
-            ),
-          };
-        }),
-      );
-    },
-    [dateIndex],
-  );
-
   const updatePickupStatus = useCallback(
     (
       storeId: string,
@@ -504,7 +486,6 @@ export function DeliveryProvider({ children }: { children: React.ReactNode }) {
         moveStoreUp,
         moveStoreDown,
         moveStoreTo,
-        updateDriverNote,
         updateItemQuantity,
         updateItemBags,
         updatePickupStatus,

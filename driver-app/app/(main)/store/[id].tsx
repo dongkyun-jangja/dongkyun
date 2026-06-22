@@ -29,6 +29,8 @@ import { StatusBadge } from '../../../src/components/StatusBadge';
 import { colors } from '../../../src/constants/colors';
 import { useDelivery } from '../../../src/context/DeliveryContext';
 import { useKakaoChat } from '../../../src/hooks/useKakaoChat';
+import { NotesModal } from '../../../src/components/NotesModal';
+import { useNotes } from '../../../src/hooks/useNotes';
 import { DeliveryItem, PickupFailKind, PickupItem } from '../../../src/types';
 
 const PICKUP_FAIL_KIND_OPTIONS: { kind: PickupFailKind; label: string; hint: string }[] = [
@@ -70,78 +72,18 @@ function ImageZoomModal({
 const ItemRow = React.memo(function ItemRow({
   item,
   isLast,
-  onUpdateQty,
-  onUpdateBags,
 }: {
   item: DeliveryItem;
   isLast: boolean;
-  onUpdateQty?: (actualQty: number | null) => void;
-  onUpdateBags?: (actualBags: number | null) => void;
 }) {
   const requestedQty = item.quantity;
   const requestedBoxes = Math.floor(requestedQty / item.boxUnit);
-  const hasMismatch = item.actualQuantity != null && item.actualQuantity !== requestedQty;
-  const actualBoxes = hasMismatch ? Math.floor(item.actualQuantity! / item.boxUnit) : null;
-  // 쇼핑백 불일치
   const requestedBags = item.bags ?? 0;
-  const hasBagMismatch = item.actualBags != null && item.actualBags !== requestedBags;
-  const actualBags = item.actualBags ?? requestedBags;
 
   const [zoomVisible, setZoomVisible] = useState(false);
-  const [qtyEditing, setQtyEditing] = useState(false);
-  const [qtyDraft, setQtyDraft] = useState('');
-  const qtyInputRef = useRef<TextInput>(null);
-  const [bagsEditing, setBagsEditing] = useState(false);
-  const [bagsDraft, setBagsDraft] = useState('');
-  const bagsInputRef = useRef<TextInput>(null);
 
   // imageUrl이 없으면 상품 코드 기반 플레이스홀더
   const imageUri = item.imageUrl ?? `https://picsum.photos/seed/${item.code}/120/120`;
-
-  const handleQtyEditStart = useCallback(() => {
-    if (!onUpdateQty) return;
-    setQtyDraft(String(item.actualQuantity ?? requestedQty));
-    setQtyEditing(true);
-    setTimeout(() => qtyInputRef.current?.focus(), 80);
-  }, [onUpdateQty, item.actualQuantity, requestedQty]);
-
-  const handleQtyConfirm = useCallback(() => {
-    if (!onUpdateQty) return;
-    const parsed = parseInt(qtyDraft, 10);
-    if (!isNaN(parsed) && parsed >= 0) {
-      onUpdateQty(parsed === requestedQty ? null : parsed);
-    }
-    setQtyEditing(false);
-    Keyboard.dismiss();
-  }, [onUpdateQty, qtyDraft, requestedQty]);
-
-  const handleQtyReset = useCallback(() => {
-    onUpdateQty?.(null);
-    setQtyEditing(false);
-  }, [onUpdateQty]);
-
-  // 쇼핑백 편집
-  const handleBagsEditStart = useCallback(() => {
-    if (!onUpdateBags) return;
-    setBagsDraft(String(item.actualBags ?? requestedBags));
-    setBagsEditing(true);
-    setTimeout(() => bagsInputRef.current?.focus(), 80);
-  }, [onUpdateBags, item.actualBags, requestedBags]);
-
-  const handleBagsConfirm = useCallback(() => {
-    if (!onUpdateBags) return;
-    const parsed = parseInt(bagsDraft, 10);
-    if (!isNaN(parsed) && parsed >= 0 && parsed <= requestedBags) {
-      onUpdateBags(parsed === requestedBags ? null : parsed);
-    }
-    setBagsEditing(false);
-    Keyboard.dismiss();
-  }, [onUpdateBags, bagsDraft, requestedBags]);
-
-  const handleBagsReset = useCallback(() => {
-    onUpdateBags?.(null);
-    setBagsEditing(false);
-  }, [onUpdateBags]);
 
   return (
     <View style={[styles.itemRow, !isLast && styles.itemRowBorder]}>
@@ -174,16 +116,6 @@ const ItemRow = React.memo(function ItemRow({
         </View>
         <View style={styles.itemMeta}>
           <Text style={styles.itemCode}>#{item.code}</Text>
-          {requestedBags > 0 && (
-            <View style={[styles.bagChip, hasBagMismatch && styles.bagChipMismatch]}>
-              <Ionicons name="bag-handle" size={11} color={hasBagMismatch ? colors.red : '#C44A00'} />
-              {hasBagMismatch ? (
-                <Text style={styles.bagChipMismatchText}>쇼핑백 {actualBags}/{requestedBags}개</Text>
-              ) : (
-                <Text style={styles.bagChipText}>쇼핑백 {requestedBags}개</Text>
-              )}
-            </View>
-          )}
         </View>
         {/* 상품 메모 */}
         {item.itemNote ? (
@@ -192,103 +124,12 @@ const ItemRow = React.memo(function ItemRow({
             <Text style={styles.itemNoteText}>{item.itemNote}</Text>
           </View>
         ) : null}
-        {/* 수량 불일치 인라인 편집 */}
-        {onUpdateQty && (
-          qtyEditing ? (
-            <View style={styles.qtyEditRow}>
-              <Text style={styles.qtyEditLabel}>실제 수량</Text>
-              <TextInput
-                ref={qtyInputRef}
-                style={styles.qtyEditInput}
-                value={qtyDraft}
-                onChangeText={setQtyDraft}
-                keyboardType="number-pad"
-                selectTextOnFocus
-                onSubmitEditing={handleQtyConfirm}
-              />
-              <Text style={styles.qtyEditUnit}>개</Text>
-              <Pressable style={styles.qtyConfirmBtn} onPress={handleQtyConfirm}>
-                <Text style={styles.qtyConfirmText}>확인</Text>
-              </Pressable>
-              <Pressable style={styles.qtyCancelBtn} onPress={() => setQtyEditing(false)} hitSlop={8}>
-                <Ionicons name="close" size={14} color={colors.gray} />
-              </Pressable>
-            </View>
-          ) : hasMismatch ? (
-            <View style={styles.qtyMismatchRow}>
-              <Ionicons name="alert-circle" size={13} color={colors.red} />
-              <Text style={styles.qtyMismatchText}>실제 {item.actualQuantity}개</Text>
-              <Pressable onPress={handleQtyEditStart} hitSlop={8}>
-                <Text style={styles.qtyMismatchEdit}>수정</Text>
-              </Pressable>
-              <Pressable onPress={handleQtyReset} hitSlop={8}>
-                <Text style={styles.qtyMismatchReset}>초기화</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <Pressable style={styles.qtyMismatchAdd} onPress={handleQtyEditStart} hitSlop={4}>
-              <Ionicons name="swap-horizontal-outline" size={11} color={colors.gray} />
-              <Text style={styles.qtyMismatchAddText}>수량 불일치 기록</Text>
-            </Pressable>
-          )
-        )}
-        {/* 쇼핑백 부족 인라인 편집 — bags>0 + onUpdateBags 있을 때만 */}
-        {onUpdateBags && requestedBags > 0 && (
-          bagsEditing ? (
-            <View style={styles.qtyEditRow}>
-              <Text style={styles.qtyEditLabel}>실제 쇼핑백</Text>
-              <TextInput
-                ref={bagsInputRef}
-                style={styles.qtyEditInput}
-                value={bagsDraft}
-                onChangeText={setBagsDraft}
-                keyboardType="number-pad"
-                selectTextOnFocus
-                onSubmitEditing={handleBagsConfirm}
-                maxLength={2}
-              />
-              <Text style={styles.qtyEditUnit}>/{requestedBags}개</Text>
-              <Pressable style={styles.qtyConfirmBtn} onPress={handleBagsConfirm}>
-                <Text style={styles.qtyConfirmText}>확인</Text>
-              </Pressable>
-              <Pressable style={styles.qtyCancelBtn} onPress={() => setBagsEditing(false)} hitSlop={8}>
-                <Ionicons name="close" size={14} color={colors.gray} />
-              </Pressable>
-            </View>
-          ) : hasBagMismatch ? (
-            <View style={styles.qtyMismatchRow}>
-              <Ionicons name="bag-handle" size={13} color={colors.red} />
-              <Text style={styles.qtyMismatchText}>쇼핑백 {actualBags}/{requestedBags}개</Text>
-              <Pressable onPress={handleBagsEditStart} hitSlop={8}>
-                <Text style={styles.qtyMismatchEdit}>수정</Text>
-              </Pressable>
-              <Pressable onPress={handleBagsReset} hitSlop={8}>
-                <Text style={styles.qtyMismatchReset}>초기화</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <Pressable style={styles.qtyMismatchAdd} onPress={handleBagsEditStart} hitSlop={4}>
-              <Ionicons name="bag-handle-outline" size={11} color={colors.gray} />
-              <Text style={styles.qtyMismatchAddText}>쇼핑백 부족 기록</Text>
-            </Pressable>
-          )
-        )}
       </View>
 
       {/* 오른쪽: 수량 표시 */}
       <View style={styles.itemRight}>
-        {hasMismatch ? (
-          <>
-            <Text style={[styles.itemQty, { color: colors.red }]}>{actualBoxes}박스</Text>
-            <Text style={[styles.itemQtySub, { textDecorationLine: 'line-through' }]}>{requestedBoxes}박스</Text>
-            <Text style={[styles.itemQtySub, { color: colors.red }]}>{item.actualQuantity}개</Text>
-          </>
-        ) : (
-          <>
-            <Text style={styles.itemQty}>{requestedBoxes}박스</Text>
-            <Text style={styles.itemQtySub}>{requestedQty}개</Text>
-          </>
-        )}
+        <Text style={styles.itemQty}>{requestedBoxes}박스</Text>
+        <Text style={styles.itemQtySub}>{requestedQty}개</Text>
       </View>
 
       <ImageZoomModal
@@ -304,43 +145,12 @@ const ItemRow = React.memo(function ItemRow({
 const PickupItemRow = React.memo(function PickupItemRow({
   item,
   isLast,
-  onUpdateQty,
 }: {
   item: PickupItem;
   isLast: boolean;
-  onUpdateQty?: (actualQty: number | null) => void;
 }) {
   const requestedQty = item.quantity;
   const requestedBoxes = item.boxUnit > 0 ? Math.floor(requestedQty / item.boxUnit) : 0;
-  const hasMismatch = item.actualQuantity != null && item.actualQuantity !== requestedQty;
-  const actualQty = item.actualQuantity ?? requestedQty;
-  const actualBoxes = item.boxUnit > 0 ? Math.floor(actualQty / item.boxUnit) : 0;
-
-  const [qtyEditing, setQtyEditing] = useState(false);
-  const [qtyDraft, setQtyDraft] = useState('');
-  const qtyInputRef = useRef<TextInput>(null);
-
-  const handleQtyEditStart = useCallback(() => {
-    if (!onUpdateQty) return;
-    setQtyDraft(String(item.actualQuantity ?? requestedQty));
-    setQtyEditing(true);
-    setTimeout(() => qtyInputRef.current?.focus(), 80);
-  }, [onUpdateQty, item.actualQuantity, requestedQty]);
-
-  const handleQtyConfirm = useCallback(() => {
-    if (!onUpdateQty) return;
-    const parsed = parseInt(qtyDraft, 10);
-    if (!isNaN(parsed) && parsed >= 0) {
-      onUpdateQty(parsed === requestedQty ? null : parsed);
-    }
-    setQtyEditing(false);
-    Keyboard.dismiss();
-  }, [onUpdateQty, qtyDraft, requestedQty]);
-
-  const handleQtyReset = useCallback(() => {
-    onUpdateQty?.(null);
-    setQtyEditing(false);
-  }, [onUpdateQty]);
 
   return (
     <View style={[styles.itemRow, !isLast && styles.itemRowBorder]}>
@@ -373,75 +183,11 @@ const PickupItemRow = React.memo(function PickupItemRow({
           </View>
         )}
 
-        {/* 수량 불일치 표시 */}
-        {hasMismatch && !qtyEditing && (
-          <View style={styles.qtyMismatchRow}>
-            <Ionicons name="alert-circle" size={12} color={colors.red} />
-            <Text style={styles.qtyMismatchText}>
-              {actualBoxes}박스 ({actualQty}개)
-            </Text>
-            <Text style={[styles.qtyMismatchEdit, { color: colors.blue }]}
-              onPress={handleQtyEditStart}
-            >
-              수정
-            </Text>
-            <Text style={styles.qtyMismatchReset} onPress={handleQtyReset}>
-              · 초기화
-            </Text>
-          </View>
-        )}
-
-        {/* 수량 편집 입력 */}
-        {qtyEditing && (
-          <View style={[styles.qtyEditRow, { borderColor: colors.blue }]}>
-            <Text style={styles.qtyEditLabel}>실제 회수 수량</Text>
-            <TextInput
-              ref={qtyInputRef}
-              style={[styles.qtyEditInput, { borderBottomColor: colors.blue }]}
-              value={qtyDraft}
-              onChangeText={setQtyDraft}
-              keyboardType="number-pad"
-              onSubmitEditing={handleQtyConfirm}
-              selectTextOnFocus
-            />
-            <Text style={styles.qtyEditUnit}>개</Text>
-            <Pressable
-              style={[styles.qtyConfirmBtn, { backgroundColor: colors.blue }]}
-              onPress={handleQtyConfirm}
-            >
-              <Text style={styles.qtyConfirmText}>확인</Text>
-            </Pressable>
-            <Pressable style={styles.qtyCancelBtn} onPress={() => setQtyEditing(false)}>
-              <Ionicons name="close" size={16} color={colors.gray} />
-            </Pressable>
-          </View>
-        )}
-
-        {/* 수량 불일치 기록 버튼 (pending, 불일치 없을 때) */}
-        {onUpdateQty && !hasMismatch && !qtyEditing && (
-          <Pressable style={styles.qtyMismatchAdd} onPress={handleQtyEditStart} hitSlop={8}>
-            <Ionicons name="create-outline" size={12} color={colors.gray} />
-            <Text style={styles.qtyMismatchAddText}>수량 불일치 기록</Text>
-          </Pressable>
-        )}
       </View>
 
       <View style={styles.itemQtyWrap}>
-        {hasMismatch ? (
-          <>
-            <Text style={[styles.itemQtySub, { textDecorationLine: 'line-through' }]}>
-              {requestedBoxes}박스
-            </Text>
-            <Text style={[styles.itemQtySub, { textDecorationLine: 'line-through' }]}>
-              {requestedQty}개
-            </Text>
-          </>
-        ) : (
-          <>
-            <Text style={[styles.itemQty, { color: colors.blue }]}>{requestedBoxes}박스</Text>
-            <Text style={styles.itemQtySub}>{requestedQty}개</Text>
-          </>
-        )}
+        <Text style={[styles.itemQty, { color: colors.blue }]}>{requestedBoxes}박스</Text>
+        <Text style={styles.itemQtySub}>{requestedQty}개</Text>
       </View>
     </View>
   );
@@ -449,20 +195,17 @@ const PickupItemRow = React.memo(function PickupItemRow({
 
 export default function StoreDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { course, updateStoreStatus, addStorePhoto, removeStorePhoto, updateDriverNote, updateItemQuantity, updateItemBags, updatePickupStatus, updatePickupItemQuantity, updatePickupDriverNote, resetIssueStore, cancelStore } = useDelivery();
+  const { course, updateStoreStatus, addStorePhoto, removeStorePhoto, updatePickupStatus, updatePickupDriverNote, resetIssueStore, cancelStore } = useDelivery();
   const router = useRouter();
   const { openChat: openKakaoChat } = useKakaoChat();
   const insets = useSafeAreaInsets();
 
   // 촬영 후 아직 확정 전 임시 사진 (pending 상태에서만 사용)
   const [pendingPhotos, setPendingPhotos] = useState<string[]>([]);
-  // 배송 완료 확인 팝업
-  const [showDeliveryConfirm, setShowDeliveryConfirm] = useState(false);
-  // 특이사항 편집 상태
-  const [noteEditing, setNoteEditing] = useState(false);
-  const [noteDraft, setNoteDraft] = useState('');
   // 이슈 신고 확인 오버레이 (Alert 대신 Expo Web 호환)
   const [showIssueConfirm, setShowIssueConfirm] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+  const { uncheckedCount } = useNotes();
   const [issueCopied, setIssueCopied] = useState(false);
   // 이슈 초기화 모달
   const [showIssueResetModal, setShowIssueResetModal] = useState(false);
@@ -473,11 +216,12 @@ export default function StoreDetailScreen() {
   // 회수 기사 메모 편집
   const [pickupNoteEditing, setPickupNoteEditing] = useState(false);
   const [pickupNoteDraft, setPickupNoteDraft] = useState('');
+  // 배송 완료 취소 팝업
+  const [showCancelDelivery, setShowCancelDelivery] = useState(false);
   // 회수 완료/미완료 취소 popup
   const [showPickupUndo, setShowPickupUndo] = useState(false);
   const [pickupUndoReason, setPickupUndoReason] = useState('');
   // 쇼핑백 확인 체크박스 (previewCard 인라인)
-  const [bagChecked, setBagChecked] = useState(false);
   // 완료 토스트
   const [remainingCount, setRemainingCount] = useState(0);
   const [nextStoreId, setNextStoreId] = useState<string | null>(null);
@@ -574,12 +318,27 @@ export default function StoreDetailScreen() {
     [store, course.stores, toastAnim, router],
   );
 
-  const handleConfirmDelivery = useCallback(() => {
+  const [showPickupWarn, setShowPickupWarn] = useState(false);
+
+  const pickupReady = !store || !store.pickupItems || store.pickupItems.length === 0
+    || store.pickupStatus === 'collected' || store.pickupStatus === 'issue';
+  const canConfirmDelivery = true;
+
+  const doConfirmDelivery = useCallback(() => {
     if (!store || pendingPhotos.length === 0) return;
     updateStoreStatus(store.id, 'delivered', pendingPhotos);
     setPendingPhotos([]);
     triggerNextStore('delivered');
   }, [store, pendingPhotos, updateStoreStatus, triggerNextStore]);
+
+  const handleConfirmDelivery = useCallback(() => {
+    if (!store || pendingPhotos.length === 0) return;
+    if (!pickupReady) {
+      setShowPickupWarn(true);
+      return;
+    }
+    doConfirmDelivery();
+  }, [store, pendingPhotos, pickupReady, doConfirmDelivery]);
 
   // 회수 전용 매장에서 회수 완료 시 호출 (triggerNextStore는 store.id를 제외하고 계산하므로 안전)
   const handlePickupOnlyCollected = useCallback(() => {
@@ -598,22 +357,6 @@ export default function StoreDetailScreen() {
     [store, updatePickupStatus, triggerNextStore],
   );
 
-  const storeTotalBags = store ? store.items.reduce((s, i) => s + (i.bags ?? 0), 0) : 0;
-  const storeActualBags = store
-    ? store.items.reduce((s, i) => s + (i.actualBags ?? (i.bags ?? 0)), 0)
-    : 0;
-  const storeBagShortage = storeTotalBags - storeActualBags;
-  const hasAnyBagMismatch = store
-    ? store.items.some((i) => i.actualBags != null && i.actualBags !== (i.bags ?? 0))
-    : false;
-  // 쇼핑백 일부 부족 기록이 있으면 체크박스 자동 해제 효과
-  // 쇼핑백 있을 때 체크 완료 여부 — 부족 기록이 있어도 "확인 완료"로 간주 (의도적 기록)
-  const bagReady = storeTotalBags === 0 || bagChecked || hasAnyBagMismatch;
-  // 회수 상품 있는 매장은 회수 완료/미완료 처리 끝나야 배송 완료 가능
-  const pickupReady = !store || !store.pickupItems || store.pickupItems.length === 0
-    || store.pickupStatus === 'collected' || store.pickupStatus === 'issue';
-  const canConfirmDelivery = bagReady && pickupReady;
-
   // 완료 상태에서 추가 사진 촬영
   const handleAddPhoto = useCallback(async () => {
     if (!store) return;
@@ -625,8 +368,6 @@ export default function StoreDetailScreen() {
   // 완료된 사진 삭제 (최소 1장 유지)
   const handleDeletePhoto = useCallback((index: number) => {
     if (!store) return;
-    const count = store.photoUris?.length ?? 0;
-    if (count <= 1) return;
     Alert.alert('사진 삭제', '이 사진을 삭제할까요?', [
       { text: '취소', style: 'cancel' },
       { text: '삭제', style: 'destructive', onPress: () => removeStorePhoto(store.id, index) },
@@ -654,10 +395,6 @@ export default function StoreDetailScreen() {
       })
       .join('\n');
 
-    const noteLine = store.driverNote
-      ? `\n📝 특이사항\n${store.driverNote}`
-      : '';
-
     const photoLine = pendingPhotos.length > 0
       ? `\n📷 현장 사진 ${pendingPhotos.length}장 (별도 공유)`
       : '';
@@ -675,7 +412,6 @@ export default function StoreDetailScreen() {
       ``,
       `📦 배송 상품`,
       itemLines,
-      noteLine,
       photoLine,
       ``,
     ].filter((l) => l !== null).join('\n');
@@ -694,19 +430,6 @@ export default function StoreDetailScreen() {
     // 채팅방 오픈
     openKakaoChat();
   }, [store, buildIssueMessage, updateStoreStatus, openKakaoChat]);
-
-  // 특이사항 편집 시작
-  const handleEditNote = useCallback(() => {
-    setNoteDraft(store?.driverNote ?? '');
-    setNoteEditing(true);
-  }, [store]);
-
-  // 특이사항 저장
-  const handleSaveNote = useCallback(() => {
-    if (!store) return;
-    updateDriverNote(store.id, noteDraft.trim());
-    setNoteEditing(false);
-  }, [store, noteDraft, updateDriverNote]);
 
   // 팀 채팅방 공유
   const handleShareToTeam = useCallback(async () => {
@@ -727,8 +450,6 @@ export default function StoreDetailScreen() {
       ? `📷 배송 사진 ${store.photoUris.filter(u => u !== 'delivered').length}장 촬영`
       : '';
 
-    const noteLine = store.driverNote ? `📝 특이사항: ${store.driverNote}` : '';
-
     const message = [
       `[배송 정보 공유] ${store.name}`,
       ``,
@@ -740,7 +461,6 @@ export default function StoreDetailScreen() {
       ``,
       statusLabel,
       photoLine,
-      noteLine,
     ].filter(Boolean).join('\n');
 
     try {
@@ -889,11 +609,26 @@ export default function StoreDetailScreen() {
                 <ItemRow
                   key={item.code}
                   item={item}
-                  isLast={idx === store.items.length - 1}
-                  onUpdateQty={isPending ? (qty) => updateItemQuantity(store.id, item.code, qty) : undefined}
-                  onUpdateBags={isPending ? (bags) => updateItemBags(store.id, item.code, bags) : undefined}
+                  isLast={idx === store.items.length - 1 && store.items.reduce((s, i) => s + (i.bags ?? 0), 0) === 0}
                 />
               ))}
+              {(() => {
+                const totalBags = store.items.reduce((s, i) => s + (i.bags ?? 0), 0);
+                if (totalBags === 0) return null;
+                return (
+                  <View style={[styles.itemRow]}>
+                    <View style={styles.itemLeft}>
+                      <View style={[styles.itemNameRow, { gap: 5 }]}>
+                        <Ionicons name="bag-handle-outline" size={14} color={colors.orange} />
+                        <Text style={styles.itemName}>쇼핑백</Text>
+                      </View>
+                    </View>
+                    <View style={styles.itemRight}>
+                      <Text style={[styles.itemQty, { color: colors.orange }]}>{totalBags}개</Text>
+                    </View>
+                  </View>
+                );
+              })()}
             </View>
           </>
         )}
@@ -950,9 +685,6 @@ export default function StoreDetailScreen() {
                     key={pItem.code}
                     item={pItem}
                     isLast={isLast}
-                    onUpdateQty={isPending
-                      ? (qty) => updatePickupItemQuantity(store.id, pItem.code, qty)
-                      : undefined}
                   />
                 );
               })}
@@ -1024,57 +756,6 @@ export default function StoreDetailScreen() {
           </>
         )}
 
-        {/* 특이사항 */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>특이사항</Text>
-          {!noteEditing && (
-            <Pressable onPress={handleEditNote} hitSlop={8}>
-              <Text style={styles.noteEditBtn}>
-                {store.driverNote ? '수정' : '+ 추가'}
-              </Text>
-            </Pressable>
-          )}
-        </View>
-
-        {noteEditing ? (
-          <View style={styles.noteEditCard}>
-            <TextInput
-              style={styles.noteInput}
-              value={noteDraft}
-              onChangeText={setNoteDraft}
-              placeholder="현장에서 발견한 특이사항을 적어주세요"
-              placeholderTextColor={colors.gray}
-              multiline
-              autoFocus
-              maxLength={200}
-            />
-            <View style={styles.noteEditActions}>
-              <Text style={styles.noteCharCount}>{noteDraft.length}/200</Text>
-              <View style={styles.noteEditBtns}>
-                <Pressable
-                  style={styles.noteCancelBtn}
-                  onPress={() => setNoteEditing(false)}
-                >
-                  <Text style={styles.noteCancelText}>취소</Text>
-                </Pressable>
-                <Pressable style={styles.noteSaveBtn} onPress={handleSaveNote}>
-                  <Text style={styles.noteSaveText}>저장</Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        ) : store.driverNote ? (
-          <Pressable style={styles.noteCard} onPress={handleEditNote}>
-            <Ionicons name="create-outline" size={15} color={colors.gray} style={{ marginTop: 1 }} />
-            <Text style={styles.noteText}>{store.driverNote}</Text>
-          </Pressable>
-        ) : (
-          <Pressable style={styles.noteEmptyCard} onPress={handleEditNote}>
-            <Ionicons name="add-circle-outline" size={16} color={colors.border} />
-            <Text style={styles.noteEmptyText}>특이사항 없음 — 탭하여 추가</Text>
-          </Pressable>
-        )}
-
         {/* 임시 사진 프리뷰 (촬영 후 완료 확정 전) — 배송 상품 있는 매장만 */}
         {isPending && hasPendingPhotos && store.items.length > 0 && (
           <View style={styles.previewCard}>
@@ -1110,32 +791,6 @@ export default function StoreDetailScreen() {
                 </Pressable>
               )}
             </View>
-
-            {/* 쇼핑백 인라인 체크 — 부족 기록이 있으면 빨간 상태로 표시 */}
-            {storeTotalBags > 0 && (
-              <Pressable
-                style={[styles.bagInlineRow, hasAnyBagMismatch && styles.bagInlineRowShortage]}
-                onPress={() => !hasAnyBagMismatch && setBagChecked((v) => !v)}
-                disabled={hasAnyBagMismatch}
-              >
-                <View style={[
-                  styles.bagCheckBox,
-                  bagChecked && !hasAnyBagMismatch && styles.bagCheckBoxChecked,
-                  hasAnyBagMismatch && styles.bagCheckBoxShortage,
-                ]}>
-                  {hasAnyBagMismatch ? (
-                    <Ionicons name="alert" size={14} color={colors.white} />
-                  ) : bagChecked ? (
-                    <Ionicons name="checkmark" size={14} color={colors.white} />
-                  ) : null}
-                </View>
-                <Text style={[styles.bagInlineLabel, hasAnyBagMismatch && { color: colors.red }]}>
-                  {hasAnyBagMismatch
-                    ? `🛍 쇼핑백 ${storeActualBags}/${storeTotalBags}개 (${storeBagShortage}개 부족 기록됨)`
-                    : `🛍 쇼핑백 ${storeTotalBags}개 포함 확인`}
-                </Text>
-              </Pressable>
-            )}
 
             <Text style={styles.previewHint}>사진 확인 후 완료 버튼을 눌러주세요</Text>
           </View>
@@ -1205,7 +860,7 @@ export default function StoreDetailScreen() {
                           <Ionicons name="camera" size={24} color={colors.border} />
                         </View>
                       )}
-                      {photoCount > 1 && (
+                      {uri !== 'delivered' && (
                         <Pressable
                           style={styles.photoDeleteBtn}
                           onPress={() => handleDeletePhoto(idx)}
@@ -1351,39 +1006,34 @@ export default function StoreDetailScreen() {
         )}
 
         {/* 배송 완료 확인 팝업 */}
-        {showDeliveryConfirm && (
-          <Modal visible transparent animationType="fade" onRequestClose={() => setShowDeliveryConfirm(false)}>
-            <Pressable style={styles.issueOverlay} onPress={() => setShowDeliveryConfirm(false)}>
-              <Pressable style={styles.issueResetModal} onPress={(e) => e.stopPropagation()}>
-                <View style={styles.issueResetModalIcon}>
-                  <Ionicons name="checkmark-circle" size={36} color={colors.green} />
-                </View>
-                <Text style={styles.issueResetModalTitle}>배송을 완료 처리할까요?</Text>
-                <Text style={styles.issueResetModalDesc}>
-                  {store.name}{'\n'}사진 {pendingPhotos.length}장 첨부됨
-                </Text>
-                <Pressable
-                  style={({ pressed }) => [styles.issueResetOption, styles.issueResetOptionPrimary, pressed && { opacity: 0.85 }]}
-                  onPress={() => { setShowDeliveryConfirm(false); handleConfirmDelivery(); }}
-                >
-                  <View style={styles.issueResetOptionIcon}>
-                    <Ionicons name="checkmark" size={22} color={colors.white} />
-                  </View>
-                  <View style={styles.issueResetOptionBody}>
-                    <Text style={styles.issueResetOptionTitle}>완료 확정</Text>
-                    <Text style={styles.issueResetOptionSub}>배송 완료로 처리하고 다음 매장으로 이동합니다</Text>
-                  </View>
-                </Pressable>
-                <Pressable style={styles.issueResetCancelBtn} onPress={() => setShowDeliveryConfirm(false)}>
-                  <Text style={styles.issueResetCancelBtnText}>취소</Text>
-                </Pressable>
-              </Pressable>
-            </Pressable>
-          </Modal>
-        )}
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      <NotesModal visible={showNotes} onClose={() => setShowNotes(false)} />
+
+      {/* 회수 상품 경고 모달 */}
+      {showPickupWarn && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setShowPickupWarn(false)}>
+          <Pressable style={styles.issueOverlay} onPress={() => setShowPickupWarn(false)}>
+            <Pressable style={styles.issueResetModal} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.issueResetModalIcon}>
+                <Ionicons name="arrow-undo-circle" size={36} color={colors.blue} />
+              </View>
+              <Text style={styles.issueResetModalTitle}>회수 상품 확인</Text>
+              <Text style={styles.issueResetModalDesc}>회수 필요한 상품이 있습니다.{'\n'}잊지 말고 챙겨주세요.</Text>
+              <Pressable
+                style={({ pressed }) => [styles.issueResetOption, styles.issueResetOptionPrimary, pressed && { opacity: 0.85 }]}
+                onPress={() => { setShowPickupWarn(false); doConfirmDelivery(); }}
+              >
+                <View style={styles.issueResetOptionBody}>
+                  <Text style={styles.issueResetOptionTitle}>OK</Text>
+                </View>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
 
       {/* 하단 액션 버튼 */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
@@ -1392,16 +1042,29 @@ export default function StoreDetailScreen() {
           <>
             {/* 배송 상품이 있으면 사진 촬영 필요, 없으면(회수 전용) 회수 완료 버튼만 */}
             {store.items.length > 0 ? (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.primaryButton,
-                  pressed && styles.primaryButtonPressed,
-                ]}
-                onPress={handleTakePhoto}
-              >
-                <Ionicons name="camera" size={22} color={colors.white} />
-                <Text style={styles.primaryButtonText}>사진 촬영하기</Text>
-              </Pressable>
+              <>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    pressed && styles.primaryButtonPressed,
+                  ]}
+                  onPress={handleTakePhoto}
+                >
+                  <Ionicons name="camera" size={22} color={colors.white} />
+                  <Text style={styles.primaryButtonText}>사진 촬영하기</Text>
+                </Pressable>
+                <View style={styles.secondaryButtonRow}>
+                  <Pressable style={styles.memoButton} onPress={() => setShowNotes(true)}>
+                    <Ionicons name="create-outline" size={15} color={colors.gray} />
+                    <Text style={styles.memoButtonText}>메모</Text>
+                    {uncheckedCount > 0 && <View style={styles.memoDot} />}
+                  </Pressable>
+                  <Pressable style={styles.issueButton} onPress={handleReportIssue}>
+                    <Ionicons name="alert-circle-outline" size={16} color={colors.red} />
+                    <Text style={styles.issueButtonText}>이슈 신고</Text>
+                  </Pressable>
+                </View>
+              </>
             ) : (
               /* 회수 전용 매장 — 사진 없이 회수 완료 처리 */
               <View style={styles.pickupActionGroup}>
@@ -1482,10 +1145,6 @@ export default function StoreDetailScreen() {
                 </View>
               )
             )}
-            <Pressable style={styles.issueButton} onPress={handleReportIssue}>
-              <Ionicons name="alert-circle-outline" size={16} color={colors.red} />
-              <Text style={styles.issueButtonText}>이슈 신고</Text>
-            </Pressable>
           </>
         )}
 
@@ -1495,23 +1154,13 @@ export default function StoreDetailScreen() {
             <Pressable
               style={({ pressed }) => [
                 styles.primaryButton,
-                !canConfirmDelivery && styles.primaryButtonDimmed,
-                pressed && canConfirmDelivery && styles.primaryButtonPressed,
+                pressed && styles.primaryButtonPressed,
               ]}
-              onPress={canConfirmDelivery ? () => setShowDeliveryConfirm(true) : undefined}
+              onPress={handleConfirmDelivery}
             >
               <Ionicons name="checkmark-circle" size={22} color={colors.white} />
               <Text style={styles.primaryButtonText}>배송 완료 확정</Text>
             </Pressable>
-            {/* 회수 미처리 시 안내 */}
-            {!pickupReady && bagReady && (
-              <View style={styles.pickupBlockHint}>
-                <Ionicons name="information-circle" size={13} color={colors.blue} />
-                <Text style={styles.pickupBlockHintText}>
-                  아래 회수 상품을 먼저 처리(완료/미완료)해 주세요
-                </Text>
-              </View>
-            )}
             {/* 배송+회수 동시 매장: 회수 완료 처리 */}
             {store.pickupItems && store.pickupItems.length > 0 && (
               store.pickupStatus === 'collected' ? (
@@ -1577,6 +1226,17 @@ export default function StoreDetailScreen() {
         )}
 
 
+        {/* 배송 완료 상태 — 취소 버튼 */}
+        {isDelivered && (
+          <Pressable
+            style={({ pressed }) => [styles.cancelDeliveryBtn, pressed && { opacity: 0.75 }]}
+            onPress={() => setShowCancelDelivery(true)}
+          >
+            <Ionicons name="arrow-undo-outline" size={16} color={colors.white} />
+            <Text style={styles.cancelDeliveryBtnText}>배송 완료 취소</Text>
+          </Pressable>
+        )}
+
         {/* 이슈 상태 */}
         {isIssue && (
           <Pressable
@@ -1592,6 +1252,38 @@ export default function StoreDetailScreen() {
           </Pressable>
         )}
       </View>
+
+      {/* 배송 완료 취소 확인 팝업 */}
+      {showCancelDelivery && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setShowCancelDelivery(false)}>
+          <Pressable style={styles.issueOverlay} onPress={() => setShowCancelDelivery(false)}>
+            <Pressable style={styles.cancelDeliveryModal} onPress={(e) => e.stopPropagation()}>
+              <Ionicons name="arrow-undo-circle" size={36} color={colors.orange} />
+              <Text style={styles.issueResetModalTitle}>배송 완료를 취소합니다</Text>
+              <Text style={styles.issueResetModalDesc}>
+                완료 상태가 해제되고{'\n'}배송 대기 상태로 돌아갑니다.
+              </Text>
+              <View style={styles.cancelDeliveryBtns}>
+                <Pressable
+                  style={[styles.cancelDeliveryModalBtn, { backgroundColor: colors.paper50, borderWidth: 1, borderColor: colors.border }]}
+                  onPress={() => setShowCancelDelivery(false)}
+                >
+                  <Text style={[styles.cancelDeliveryModalBtnText, { color: colors.gray }]}>닫기</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.cancelDeliveryModalBtn, { backgroundColor: colors.orange }]}
+                  onPress={() => {
+                    setShowCancelDelivery(false);
+                    resetIssueStore(store.id);
+                  }}
+                >
+                  <Text style={[styles.cancelDeliveryModalBtnText, { color: colors.white }]}>취소 확인</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
 
       {/* 이슈 신고 확인 오버레이 */}
       {showIssueConfirm && (
@@ -2268,18 +1960,6 @@ const styles = StyleSheet.create({
   },
 
   // 특이사항
-  noteEditBtn: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.orange,
-  },
-  noteEditCard: {
-    backgroundColor: colors.white,
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: colors.orange,
-  },
   noteInput: {
     fontSize: 14,
     color: colors.black,
@@ -2329,36 +2009,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.white,
   },
-  noteCard: {
-    backgroundColor: colors.white,
-    borderRadius: 12,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  noteText: {
-    flex: 1,
-    fontSize: 14,
-    color: colors.black,
-    lineHeight: 20,
-  },
-  noteEmptyCard: {
-    backgroundColor: colors.paper100,
-    borderRadius: 12,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderStyle: 'dashed',
-  },
-  noteEmptyText: {
-    fontSize: 13,
-    color: colors.gray,
-  },
-
   // 임시 사진 프리뷰 카드
   previewCard: {
     backgroundColor: colors.white,
@@ -2615,8 +2265,39 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.gray,
   },
+  secondaryButtonRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  memoButton: {
+    flex: 1,
+    height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.paper50,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  memoButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.gray,
+  },
+  memoDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: colors.red,
+    position: 'absolute',
+    top: 8,
+    right: 10,
+  },
   issueButton: {
-    height: 52,
+    flex: 1,
+    height: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -2640,7 +2321,7 @@ const styles = StyleSheet.create({
   },
   issueButtonText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.red,
   },
 
@@ -3722,5 +3403,45 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: colors.white,
+  },
+
+  cancelDeliveryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: colors.red,
+  },
+  cancelDeliveryBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.white,
+  },
+  cancelDeliveryModal: {
+    backgroundColor: colors.white,
+    borderRadius: 20,
+    padding: 24,
+    marginHorizontal: 32,
+    alignItems: 'center',
+    gap: 0,
+  },
+  cancelDeliveryBtns: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+    width: '100%',
+  },
+  cancelDeliveryModalBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelDeliveryModalBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

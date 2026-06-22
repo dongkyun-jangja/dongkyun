@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -12,9 +13,11 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../../src/constants/colors';
+import { NotesModal } from '../../../src/components/NotesModal';
 import { useDelivery } from '../../../src/context/DeliveryContext';
 import { useCancelLog } from '../../../src/hooks/useCancelLog';
 import { useKakaoChat } from '../../../src/hooks/useKakaoChat';
+import { useNotes } from '../../../src/hooks/useNotes';
 import { usePushNotifications } from '../../../src/hooks/usePushNotifications';
 
 function getGreeting() {
@@ -31,7 +34,14 @@ function formatDate(dateStr: string) {
 }
 
 export default function DashboardScreen() {
-  const { course, isToday, courseConfirmed, updateStoreStatus } = useDelivery();
+  const { course, isToday, courseConfirmed, updateStoreStatus, goToDate, allCourses } = useDelivery();
+
+  // 탭 진입 시 항상 오늘 날짜로 리셋
+  useFocusEffect(
+    useCallback(() => {
+      goToDate(allCourses.length - 1);
+    }, [goToDate, allCourses.length]),
+  );
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [showAllDonePopup, setShowAllDonePopup] = useState(false);
@@ -60,6 +70,8 @@ export default function DashboardScreen() {
   const { openChat: openKakaoChat, isConfigured: isChatConfigured } = useKakaoChat();
   const { granted: pushGranted, loaded: pushLoaded } = usePushNotifications();
   const { addCancelLog } = useCancelLog();
+  const { uncheckedCount } = useNotes();
+  const [showNotes, setShowNotes] = useState(false);
 
   const sortedStores = useMemo(
     () => [...course.stores].filter((s) => !s.isCancelled).sort((a, b) => a.order - b.order),
@@ -318,6 +330,15 @@ export default function DashboardScreen() {
               <Text style={styles.driverName}>{course.driver.name} 기사님 👋</Text>
             </View>
             <View style={styles.headerRight}>
+              {/* 메모 버튼 */}
+              <Pressable
+                style={({ pressed }) => [styles.settingsBtn, pressed && { opacity: 0.7 }]}
+                onPress={() => setShowNotes(true)}
+                hitSlop={8}
+              >
+                <Ionicons name="create-outline" size={20} color="rgba(255,255,255,0.85)" />
+                {uncheckedCount > 0 && <View style={styles.settingsDot} />}
+              </Pressable>
               {/* 알림 버튼 */}
               {/* 우선순위: 푸시 미허용(긴급) > 카톡 미설정. 동시에 2개 도트 노출 방지 */}
               <Pressable
@@ -672,6 +693,7 @@ export default function DashboardScreen() {
 
         </View>
       </ScrollView>
+      <NotesModal visible={showNotes} onClose={() => setShowNotes(false)} />
     </SafeAreaView>
   );
 }

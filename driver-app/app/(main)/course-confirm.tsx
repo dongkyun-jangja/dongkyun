@@ -5,6 +5,7 @@ import {
   KeyboardAvoidingView,
   LayoutAnimation,
   Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -25,6 +26,7 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../src/constants/colors';
 import { useDelivery } from '../../src/context/DeliveryContext';
+import { useNotes } from '../../src/hooks/useNotes';
 
 if (Platform.OS === 'android') {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -225,7 +227,20 @@ export default function CourseConfirmScreen() {
 
   const blackItemCount = aggregatedProducts.filter((p) => p.isBlack).length;
 
+  const { uncheckedCount } = useNotes();
+  const [showUncheckedMemoWarn, setShowUncheckedMemoWarn] = useState(false);
+
   const handleConfirm = () => {
+    if (uncheckedCount > 0) {
+      setShowUncheckedMemoWarn(true);
+      return;
+    }
+    setConfirmTime(formatTime(new Date()));
+    setShowReady(true);
+  };
+
+  const handleConfirmAfterWarn = () => {
+    setShowUncheckedMemoWarn(false);
     setConfirmTime(formatTime(new Date()));
     setShowReady(true);
   };
@@ -654,6 +669,32 @@ export default function CourseConfirmScreen() {
           </Pressable>
         </View>
       </SafeAreaView>
+
+      {/* 미확인 메모 경고 팝업 */}
+      <Modal visible={showUncheckedMemoWarn} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>확인하지 않은 메모가 있어요</Text>
+            <Text style={styles.modalMessage}>
+              {`체크되지 않은 메모가 ${uncheckedCount}개 있습니다.\n그래도 출발하시겠어요?`}
+            </Text>
+            <View style={styles.modalButtons}>
+              <Pressable
+                style={[styles.modalBtn, styles.modalBtnNo]}
+                onPress={() => setShowUncheckedMemoWarn(false)}
+              >
+                <Text style={styles.modalBtnNoText}>취소</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalBtn, styles.modalBtnYes]}
+                onPress={handleConfirmAfterWarn}
+              >
+                <Text style={styles.modalBtnYesText}>출발</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </GestureDetector>
   );
 }
@@ -979,4 +1020,33 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.gray,
   },
+
+  modalBox: {
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    padding: 24,
+    width: 300,
+    gap: 12,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  modalBtnNo: {
+    flex: 1,
+    width: undefined,
+    marginTop: 0,
+    backgroundColor: colors.paper50,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modalBtnNoText: { fontSize: 15, fontWeight: '600', color: colors.gray },
+  modalBtnYes: {
+    flex: 1,
+    width: undefined,
+    marginTop: 0,
+    backgroundColor: colors.red50,
+  },
+  modalBtnYesText: { fontSize: 15, fontWeight: '700', color: colors.white },
 });

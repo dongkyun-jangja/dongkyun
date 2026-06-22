@@ -22,6 +22,8 @@ import { colors } from '../../src/constants/colors';
 import { useDelivery } from '../../src/context/DeliveryContext';
 import { useCancelLog } from '../../src/hooks/useCancelLog';
 import { useKakaoChat } from '../../src/hooks/useKakaoChat';
+import { useNotes } from '../../src/hooks/useNotes';
+import { NotesModal } from '../../src/components/NotesModal';
 import { Store } from '../../src/types';
 
 const { height: SCREEN_H } = Dimensions.get('window');
@@ -96,6 +98,7 @@ function StorePanel({
   onUndoRequest,
   onOpenKakao,
   onIssueReset,
+  onMemo,
 }: {
   store: Store;
   onDelivered: (storeId: string, photos: string[]) => void;
@@ -103,9 +106,10 @@ function StorePanel({
   onUndoRequest: (storeId: string) => void;
   onOpenKakao: (storeId: string) => void;
   onIssueReset: (storeId: string) => void;
+  onMemo: () => void;
 }) {
   const [pendingPhotos, setPendingPhotos] = useState<string[]>([]);
-  const [showConfirm, setShowConfirm] = useState(false);
+  const [showPickupWarn, setShowPickupWarn] = useState(false);
   const prevStoreId = useRef(store.id);
 
   const totalBags = store.items.reduce((s, i) => s + (i.bags ?? 0), 0);
@@ -135,8 +139,17 @@ function StorePanel({
   const handleTakePhoto = useCallback(async () => {
     const uri = await openCamera();
     if (!uri) return;
-    setPendingPhotos([uri]);
-  }, [openCamera]);
+    const photos = [uri];
+    setPendingPhotos(photos);
+    const hasUnhandledPickup = (store.pickupItems?.length ?? 0) > 0
+      && store.pickupStatus !== 'collected'
+      && store.pickupStatus !== 'issue';
+    if (hasUnhandledPickup) {
+      setShowPickupWarn(true);
+    } else {
+      onDelivered(store.id, photos);
+    }
+  }, [openCamera, onDelivered, store.id, store.pickupItems, store.pickupStatus]);
 
   const handleAddPhoto = useCallback(async () => {
     if (pendingPhotos.length >= 3) return;
@@ -277,20 +290,6 @@ function StorePanel({
           </>
         )}
 
-        {/* 특이사항 */}
-        {isPending && (
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>특이사항</Text>
-          </View>
-        )}
-        {isPending && (
-          <View style={styles.noteCard}>
-            <Text style={styles.noteText}>
-              {store.driverNote ? store.driverNote : '특이사항 없음 — 탭하여 추가'}
-            </Text>
-          </View>
-        )}
-
         {/* 상품 사진 */}
         {isPending && hasPendingPhotos && (
           <View style={styles.photoCard}>
@@ -379,66 +378,33 @@ function StorePanel({
       {/* 하단 버튼 */}
       {isPending && (
         <View style={styles.panelBar}>
-          {!canConfirm ? (
-            <>
-              <Pressable style={styles.primaryBtn} onPress={handleTakePhoto}>
-                <Ionicons name="camera" size={18} color={colors.white} />
-                <Text style={styles.primaryBtnText}>사진 촬영하기</Text>
-              </Pressable>
-              <Pressable style={styles.issueBtn} onPress={() => onIssue(store.id)}>
-                <Ionicons name="alert-circle-outline" size={15} color={colors.red} />
-                <Text style={styles.issueBtnText}>이슈 신고</Text>
-              </Pressable>
-            </>
-          ) : (
-            /* 모든 사진 완료 */
-            <>
-              <Pressable
-                style={styles.primaryBtn}
-                onPress={() => setShowConfirm(true)}
-              >
-                <Ionicons name="checkmark-circle" size={18} color={colors.white} />
-                <Text style={styles.primaryBtnText}>배송 완료 확정</Text>
-              </Pressable>
-              <View style={styles.secondaryRow}>
-                <Pressable style={styles.retakeBtn} onPress={handleTakePhoto}>
-                  <Ionicons name="camera-outline" size={14} color={colors.gray} />
-                  <Text style={styles.retakeBtnText}>다시 찍기</Text>
-                </Pressable>
-                <Pressable style={styles.issueBtn} onPress={() => onIssue(store.id)}>
-                  <Ionicons name="alert-circle-outline" size={14} color={colors.red} />
-                  <Text style={styles.issueBtnText}>이슈 신고</Text>
-                </Pressable>
-              </View>
-            </>
-          )}
+          <Pressable style={styles.primaryBtn} onPress={handleTakePhoto}>
+            <Ionicons name="camera" size={18} color={colors.white} />
+            <Text style={styles.primaryBtnText}>사진 촬영하기</Text>
+          </Pressable>
+          <View style={styles.secondaryRow}>
+            <Pressable style={styles.memoBtn} onPress={() => onMemo()}>
+              <Ionicons name="create-outline" size={14} color={colors.gray} />
+              <Text style={styles.memoBtnText}>메모</Text>
+            </Pressable>
+            <Pressable style={styles.issueBtn} onPress={() => onIssue(store.id)}>
+              <Ionicons name="alert-circle-outline" size={15} color={colors.red} />
+              <Text style={styles.issueBtnText}>이슈 신고</Text>
+            </Pressable>
+          </View>
         </View>
       )}
 
-      {/* 완료 확인 팝업 */}
-      {showConfirm && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setShowConfirm(false)}>
-          <Pressable style={styles.overlay} onPress={() => setShowConfirm(false)}>
+      {/* 회수 상품 경고 모달 */}
+      {showPickupWarn && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setShowPickupWarn(false)}>
+          <Pressable style={styles.overlay} onPress={() => setShowPickupWarn(false)}>
             <Pressable style={styles.confirmModal} onPress={(e) => e.stopPropagation()}>
-              <Ionicons name="checkmark-circle" size={36} color={colors.green} />
-              <Text style={styles.confirmTitle}>배송을 완료 처리할까요?</Text>
-              <Text style={styles.confirmDesc}>
-                {store.name}{'\n'}
-                상품 사진 {pendingPhotos.length}장
-                {needsBagPhoto ? `  |  쇼핑백 사진 ${pendingBagPhotos.length}장` : ''}
-              </Text>
-              <Pressable
-                style={styles.confirmBtn}
-                onPress={() => {
-                  setShowConfirm(false);
-                  onDelivered(store.id, pendingPhotos);
-                  setPendingPhotos([]);
-                }}
-              >
-                <Text style={styles.confirmBtnText}>완료 확정</Text>
-              </Pressable>
-              <Pressable style={styles.confirmCancelBtn} onPress={() => setShowConfirm(false)}>
-                <Text style={styles.confirmCancelText}>취소</Text>
+              <Ionicons name="arrow-undo-circle" size={36} color={colors.blue} />
+              <Text style={styles.confirmTitle}>회수 상품 확인</Text>
+              <Text style={styles.confirmDesc}>회수 필요한 상품이 있습니다.{'\n'}잊지 말고 챙겨주세요.</Text>
+              <Pressable style={styles.confirmBtn} onPress={() => { setShowPickupWarn(false); onDelivered(store.id, pendingPhotos); }}>
+                <Text style={styles.confirmBtnText}>OK</Text>
               </Pressable>
             </Pressable>
           </Pressable>
@@ -458,6 +424,8 @@ export default function SplitDeliveryScreen() {
   const insets = useSafeAreaInsets();
 
   const [undoTarget, setUndoTarget] = useState<string | null>(null);
+  const [showNotes, setShowNotes] = useState(false);
+  const { uncheckedCount } = useNotes();
   const [undoReason, setUndoReason] = useState('');
 
   const sortedStores = useMemo(
@@ -751,6 +719,7 @@ export default function SplitDeliveryScreen() {
           onUndoRequest={setUndoTarget}
           onOpenKakao={handleOpenKakao}
           onIssueReset={handleIssueReset}
+          onMemo={() => setShowNotes(true)}
         />
       </View>
 
@@ -856,6 +825,7 @@ export default function SplitDeliveryScreen() {
           </Modal>
         );
       })()}
+      <NotesModal visible={showNotes} onClose={() => setShowNotes(false)} />
     </SafeAreaView>
   );
 }
@@ -939,9 +909,6 @@ const styles = StyleSheet.create({
   // 상품명 행
   itemNameRow:  { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
 
-  // 특이사항
-  noteCard:     { backgroundColor: colors.white, borderRadius: 10, padding: 12, marginBottom: 10 },
-  noteText:     { fontSize: 12, color: colors.gray, lineHeight: 18 },
 
   // 상품 목록
   itemCard:     { backgroundColor: colors.white, borderRadius: 10, overflow: 'hidden', marginBottom: 10 },
@@ -1005,8 +972,10 @@ const styles = StyleSheet.create({
   secondaryRow: { flexDirection: 'row', gap: 8 },
   retakeBtn:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.paper100, borderRadius: 10, paddingVertical: 10 },
   retakeBtnText:{ fontSize: 13, color: colors.gray },
-  issueBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: colors.red + '50', borderRadius: 10, paddingVertical: 10 },
-  issueBtnText: { fontSize: 13, color: colors.red },
+  memoBtn:      { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingVertical: 10, backgroundColor: colors.paper50 },
+  memoBtnText:  { fontSize: 13, color: colors.gray, fontWeight: '600' },
+  issueBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: colors.red + '50', borderRadius: 10, paddingVertical: 10, backgroundColor: colors.red50 },
+  issueBtnText: { fontSize: 13, color: colors.red, fontWeight: '700' },
 
   // 배송 완료 취소 버튼
   undoBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.red, borderRadius: 12, paddingVertical: 13 },

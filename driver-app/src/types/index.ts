@@ -56,7 +56,6 @@ export interface Store {
   items: DeliveryItem[];
   photoUris?: string[];   // 최대 3장, 최소 1장 (delivered 상태)
   deliveredAt?: string;  // 'HH:MM' 형식
-  driverNote?: string;   // 기사 현장 메모
   // 회수(pickup) 관련
   pickupItems?: PickupItem[];   // 회수 상품 목록 (없으면 회수 없음)
   pickupStatus?: PickupStatus;  // 회수 상태
