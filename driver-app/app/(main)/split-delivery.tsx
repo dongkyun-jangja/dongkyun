@@ -28,7 +28,7 @@ import { NotesModal } from '../../src/components/NotesModal';
 import { Store } from '../../src/types';
 
 const { height: SCREEN_H } = Dimensions.get('window');
-const TOP_RATIO = 0.40; // 상단 목록 비율
+const TOP_RATIO = 0.45; // 상단 목록 비율
 
 // ─── 상단 목록 아이템 ────────────────────────────────────────────────────
 function ListItem({
@@ -202,12 +202,19 @@ function StorePanel({
         {/* 배송 상품 목록 */}
         {store.items.length > 0 && (() => {
           const hasBlack = store.items.some((i) => i.isBlack);
+          const hasWhisky = store.items.some((i) => i.isWhisky);
           return (
             <>
               {hasBlack && (
                 <View style={styles.blackBanner}>
                   <Ionicons name="diamond" size={13} color="#FFD700" />
                   <Text style={styles.blackBannerText}>블랙멤버십 상품 포함 — 픽업 매장 인계 시 우선 처리해 주세요</Text>
+                </View>
+              )}
+              {hasWhisky && (
+                <View style={styles.rfidBanner}>
+                  <Ionicons name="wifi-outline" size={13} color={colors.white} />
+                  <Text style={styles.rfidBannerText}>위스키 상품 포함 — 배송 완료 전 RFID 태그를 확인해 주세요</Text>
                 </View>
               )}
               <View style={styles.sectionHeader}>
@@ -225,6 +232,11 @@ function StorePanel({
                           {item.isBlack && (
                             <View style={styles.blackBadge}>
                               <Text style={styles.blackBadgeText}>블랙</Text>
+                            </View>
+                          )}
+                          {item.isWhisky && (
+                            <View style={styles.rfidBadge}>
+                              <Text style={styles.rfidBadgeText}>RFID</Text>
                             </View>
                           )}
                         </View>
@@ -515,11 +527,22 @@ export default function SplitDeliveryScreen() {
     });
   }, [donePopupAnim]);
 
+  // RFID 확인 팝업
+  const [showRfidConfirm, setShowRfidConfirm] = useState(false);
+  const [pendingDelivery, setPendingDelivery] = useState<{ id: string; photos: string[] } | null>(null);
+
   const doneCount = sortedStores.filter((s) => s.status === 'delivered').length;
   const totalCount = sortedStores.length;
 
   const handleDelivered = useCallback(
     (id: string, photos: string[]) => {
+      const store = sortedStores.find((s) => s.id === id);
+      const hasWhisky = store?.items.some((i) => i.isWhisky) ?? false;
+      if (hasWhisky) {
+        setPendingDelivery({ id, photos });
+        setShowRfidConfirm(true);
+        return;
+      }
       updateStoreStatus(id, 'delivered', photos);
       const nextPending = sortedStores.find(
         (s) => s.status === 'pending' && s.id !== id,
@@ -534,6 +557,24 @@ export default function SplitDeliveryScreen() {
     },
     [updateStoreStatus, sortedStores, router, showDeliveryDonePopup],
   );
+
+  const confirmRfidAndDeliver = useCallback(() => {
+    if (!pendingDelivery) return;
+    setShowRfidConfirm(false);
+    const { id, photos } = pendingDelivery;
+    setPendingDelivery(null);
+    updateStoreStatus(id, 'delivered', photos);
+    const nextPending = sortedStores.find(
+      (s) => s.status === 'pending' && s.id !== id,
+    );
+    showDeliveryDonePopup(() => {
+      if (nextPending) {
+        setSelectedId(nextPending.id);
+      } else {
+        router.replace('/(main)/(tabs)/dashboard');
+      }
+    });
+  }, [pendingDelivery, updateStoreStatus, sortedStores, router, showDeliveryDonePopup]);
 
   const handleUndoConfirm = useCallback(() => {
     if (!undoTarget || undoReason.trim().length === 0) return;
@@ -847,6 +888,27 @@ export default function SplitDeliveryScreen() {
       })()}
       <NotesModal visible={showNotes} onClose={() => setShowNotes(false)} />
 
+      {/* RFID 확인 팝업 */}
+      {showRfidConfirm && (
+        <Pressable style={styles.rfidOverlay} onPress={() => setShowRfidConfirm(false)}>
+          <Pressable style={styles.rfidModal} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.rfidModalIcon}>
+              <Ionicons name="wifi-outline" size={32} color={colors.white} />
+            </View>
+            <Text style={styles.rfidModalTitle}>RFID 태그 확인</Text>
+            <Text style={styles.rfidModalDesc}>위스키 상품이 포함되어 있습니다.{'\n'}단말기로 RFID 태그를 완료하셨나요?</Text>
+            <View style={styles.rfidModalBtns}>
+              <Pressable style={styles.rfidModalBtnCancel} onPress={() => setShowRfidConfirm(false)}>
+                <Text style={styles.rfidModalBtnCancelText}>아직이요</Text>
+              </Pressable>
+              <Pressable style={styles.rfidModalBtnConfirm} onPress={confirmRfidAndDeliver}>
+                <Text style={styles.rfidModalBtnConfirmText}>완료했어요</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      )}
+
       {/* 배송 완료 팝업 */}
       {showDonePopup && (
         <Pressable
@@ -949,6 +1011,22 @@ const styles = StyleSheet.create({
   blackBannerText: { flex: 1, fontSize: 11, color: '#FFD700', lineHeight: 16 },
   blackBadge:   { backgroundColor: '#1E1E1E', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, marginLeft: 5 },
   blackBadgeText:{ fontSize: 10, fontWeight: '700', color: '#FFD700' },
+
+  // RFID (위스키)
+  rfidBanner:   { flexDirection: 'row', alignItems: 'flex-start', gap: 7, backgroundColor: '#1A3A5C', borderRadius: 8, padding: 10, marginBottom: 8 },
+  rfidBannerText: { flex: 1, fontSize: 11, color: colors.white, lineHeight: 16 },
+  rfidBadge:    { backgroundColor: '#1A3A5C', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, marginLeft: 5 },
+  rfidBadgeText: { fontSize: 10, fontWeight: '700', color: colors.white },
+  rfidOverlay:  { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center' },
+  rfidModal:    { backgroundColor: colors.white, borderRadius: 20, marginHorizontal: 32, padding: 28, alignItems: 'center', gap: 12 },
+  rfidModalIcon:{ width: 60, height: 60, borderRadius: 30, backgroundColor: '#1A3A5C', justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
+  rfidModalTitle: { fontSize: 18, fontWeight: '800', color: colors.black },
+  rfidModalDesc:  { fontSize: 14, color: colors.gray, textAlign: 'center', lineHeight: 20 },
+  rfidModalBtns:  { flexDirection: 'row', gap: 10, marginTop: 4, width: '100%' },
+  rfidModalBtnCancel:  { flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: colors.paper100, alignItems: 'center' },
+  rfidModalBtnCancelText: { fontSize: 14, fontWeight: '600', color: colors.gray },
+  rfidModalBtnConfirm: { flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: '#1A3A5C', alignItems: 'center' },
+  rfidModalBtnConfirmText: { fontSize: 14, fontWeight: '700', color: colors.white },
 
   // 쇼핑백
   bagItemCard:       { borderWidth: 1.5, borderColor: colors.orange + '55' },

@@ -90,8 +90,8 @@ const mockCourse20250809: Course = {
       address: '서울시 강남구 삼성동 45-2', phone: '02-2345-6789',
       status: 'delivered', order: 2, deliveredAt: '09:45', photoUris: ['delivered'],
       items: [
-        { code: '21842', name: '아드벡 10년 (700ml)', quantity: 6, boxUnit: 6 },
-        { code: '01842', name: '아드벡 트레이블린 (700ml)', quantity: 6, boxUnit: 6 },
+        { code: '21842', name: '아드벡 10년 (700ml)', quantity: 6, boxUnit: 6, isWhisky: true },
+        { code: '01842', name: '아드벡 트레이블린 (700ml)', quantity: 6, boxUnit: 6, isWhisky: true },
       ],
     },
     {
@@ -171,7 +171,7 @@ const mockCourse20250811: Course = {
       address: '서울시 강남구 삼성동 45-2', phone: '02-2345-6789',
       status: 'delivered', order: 2, deliveredAt: '09:05', photoUris: ['delivered'],
       items: [
-        { code: '21842', name: '아드벡 10년 (700ml)', quantity: 12, boxUnit: 6 },
+        { code: '21842', name: '아드벡 10년 (700ml)', quantity: 12, boxUnit: 6, isWhisky: true },
       ],
     },
     {
@@ -294,7 +294,7 @@ const mockCourse20250813: Course = {
       status: 'delivered', order: 1, deliveredAt: '07:55',
       photoUris: ['delivered'],
       items: [
-        { code: '21842', name: '아드벡 10년 (700ml)', quantity: 6, boxUnit: 6 },
+        { code: '21842', name: '아드벡 10년 (700ml)', quantity: 6, boxUnit: 6, isWhisky: true },
       ],
     },
     {
@@ -358,8 +358,8 @@ export const mockCourse: Course = {
       status: 'pending', photoUris: ['https://picsum.photos/seed/mock/400/300'],
       order: 2,
       items: [
-        { code: '21842', name: '아드벡 10년 (700ml)', quantity: 6, boxUnit: 6, bags: 2, isBlack: true, itemNote: '박스 충격 주의 — 낱병 포장 상태 확인 필수' },
-        { code: '01842', name: '아드벡 트레이블린 (700ml)', quantity: 6, boxUnit: 6, isBlack: true },
+        { code: '21842', name: '아드벡 10년 (700ml)', quantity: 6, boxUnit: 6, bags: 2, isBlack: true, isWhisky: true, itemNote: '박스 충격 주의 — 낱병 포장 상태 확인 필수' },
+        { code: '01842', name: '아드벡 트레이블린 (700ml)', quantity: 6, boxUnit: 6, isBlack: true, isWhisky: true },
       ],
     },
     {
@@ -372,7 +372,7 @@ export const mockCourse: Course = {
       status: 'pending', photoUris: ['https://picsum.photos/seed/mock/400/300'],
       order: 3,
       items: [
-        { code: '20059', name: '바크스 룸 세이카스코 (750ml)', quantity: 6, boxUnit: 6 },
+        { code: '20059', name: '바크스 룸 세이카스코 (750ml)', quantity: 6, boxUnit: 6, isWhisky: true },
         { code: '30701', name: '오스카 로디스 (750ml)', quantity: 12, boxUnit: 12, isBlack: true },
         { code: '30921', name: '아무 아라바이 알벡 (750ml)', quantity: 6, boxUnit: 6, isBlack: true, itemNote: '스크류캡 아님 — 코르크 손상 주의' },
       ],
@@ -503,7 +503,7 @@ export const mockCourse: Course = {
       status: 'pending', photoUris: [],
       order: 12,
       items: [
-        { code: '21842', name: '아드벡 10년 (700ml)', quantity: 6, boxUnit: 6, isBlack: true, itemNote: '낱병 포장 확인 필수' },
+        { code: '21842', name: '아드벡 10년 (700ml)', quantity: 6, boxUnit: 6, isBlack: true, isWhisky: true, itemNote: '낱병 포장 확인 필수' },
         { code: '30923', name: '파이로드 알 보로 (750ml)', quantity: 12, boxUnit: 6, isBlack: true },
         { code: '21490', name: '다이에트 아미 (750ml)', quantity: 6, boxUnit: 6 },
       ],
@@ -587,7 +587,7 @@ export const mockCourse: Course = {
       status: 'pending', photoUris: [],
       order: 18,
       items: [
-        { code: '01842', name: '아드벡 트레이블린 (700ml)', quantity: 6, boxUnit: 6, isBlack: true, bags: 4, itemNote: '쇼핑백 포장 후 전달' },
+        { code: '01842', name: '아드벡 트레이블린 (700ml)', quantity: 6, boxUnit: 6, isBlack: true, isWhisky: true, bags: 4, itemNote: '쇼핑백 포장 후 전달' },
         { code: '30921', name: '아무 아라바이 알벡 (750ml)', quantity: 6, boxUnit: 6, isBlack: true },
       ],
     },

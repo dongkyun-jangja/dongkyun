@@ -113,6 +113,12 @@ const ItemRow = React.memo(function ItemRow({
               <Text style={styles.itemBlackBadgeText}>블랙</Text>
             </View>
           )}
+          {item.isWhisky && (
+            <View style={styles.itemRfidBadge}>
+              <Ionicons name="wifi-outline" size={8} color={colors.white} />
+              <Text style={styles.itemRfidBadgeText}>RFID</Text>
+            </View>
+          )}
         </View>
         <View style={styles.itemMeta}>
           <Text style={styles.itemCode}>#{item.code}</Text>
@@ -321,6 +327,7 @@ export default function StoreDetailScreen() {
   );
 
   const [showPickupWarn, setShowPickupWarn] = useState(false);
+  const [showRfidConfirm, setShowRfidConfirm] = useState(false);
 
   const pickupReady = !store || !store.pickupItems || store.pickupItems.length === 0
     || store.pickupStatus === 'collected' || store.pickupStatus === 'issue';
@@ -337,6 +344,11 @@ export default function StoreDetailScreen() {
     if (!store || pendingPhotos.length === 0) return;
     if (!pickupReady) {
       setShowPickupWarn(true);
+      return;
+    }
+    const hasWhisky = store.items.some((i) => i.isWhisky);
+    if (hasWhisky) {
+      setShowRfidConfirm(true);
       return;
     }
     doConfirmDelivery();
@@ -604,6 +616,12 @@ export default function StoreDetailScreen() {
               <View style={styles.blackInfoBanner}>
                 <Ionicons name="diamond" size={13} color="#EECB4E" />
                 <Text style={styles.blackInfoText}>블랙멤버십 상품 포함 — 픽업 매장 인계 시 우선 처리해 주세요</Text>
+              </View>
+            )}
+            {store.items.some((i) => i.isWhisky) && (
+              <View style={styles.rfidInfoBanner}>
+                <Ionicons name="wifi-outline" size={13} color={colors.white} />
+                <Text style={styles.rfidInfoText}>위스키 상품 포함 — 배송 완료 전 RFID 태그를 확인해 주세요</Text>
               </View>
             )}
             <View style={styles.card}>
@@ -1013,6 +1031,35 @@ export default function StoreDetailScreen() {
       </ScrollView>
 
       <NotesModal visible={showNotes} onClose={() => setShowNotes(false)} />
+
+      {/* RFID 확인 팝업 */}
+      {showRfidConfirm && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setShowRfidConfirm(false)}>
+          <Pressable style={styles.issueOverlay} onPress={() => setShowRfidConfirm(false)}>
+            <Pressable style={styles.issueResetModal} onPress={(e) => e.stopPropagation()}>
+              <View style={[styles.issueResetModalIcon, { backgroundColor: '#1A3A5C' }]}>
+                <Ionicons name="wifi-outline" size={32} color={colors.white} />
+              </View>
+              <Text style={styles.issueResetModalTitle}>RFID 태그 확인</Text>
+              <Text style={styles.issueResetModalDesc}>위스키 상품이 포함되어 있습니다.{'\n'}단말기로 RFID 태그를 완료하셨나요?</Text>
+              <View style={styles.cancelDeliveryModalBtns}>
+                <Pressable
+                  style={[styles.cancelDeliveryModalBtn, { backgroundColor: colors.paper100 }]}
+                  onPress={() => setShowRfidConfirm(false)}
+                >
+                  <Text style={[styles.cancelDeliveryModalBtnText, { color: colors.gray }]}>아직이요</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.cancelDeliveryModalBtn, { backgroundColor: '#1A3A5C' }]}
+                  onPress={() => { setShowRfidConfirm(false); doConfirmDelivery(); }}
+                >
+                  <Text style={[styles.cancelDeliveryModalBtnText, { color: colors.white }]}>완료했어요</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
 
       {/* 회수 상품 경고 모달 */}
       {showPickupWarn && (
@@ -1783,6 +1830,23 @@ const styles = StyleSheet.create({
     color: '#EECB4E',
     lineHeight: 17,
   },
+  rfidInfoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#1A3A5C',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 6,
+  },
+  rfidInfoText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.white,
+    lineHeight: 17,
+  },
 
   // 상품 행
   itemRow: {
@@ -1832,6 +1896,22 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     color: '#EECB4E',
+    letterSpacing: 0.3,
+  },
+  itemRfidBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#1A3A5C',
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    flexShrink: 0,
+  },
+  itemRfidBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.white,
     letterSpacing: 0.3,
   },
   itemLeft: { flex: 1, gap: 3 },

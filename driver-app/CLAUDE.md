@@ -120,7 +120,7 @@ interface Store {
    `canConfirmDelivery = bagReady && pickupReady` (store/[id].tsx)
 
 4. **완료 취소 = 2단계 confirmation**
-   첫 탭 → 버튼이 "정말?" 빨간색으로 변환 → 2.5초 내 두 번째 탭만 popup 열림.
+   첫 탭 → 버튼이 "취소할까요?" 빨간색으로 변환 → 2.5초 내 두 번째 탭만 popup 열림.
    햇빛·한 손 사용 환경에서 오탭 방지가 목적. 이 패턴 깨지 마세요.
 
 5. **이슈 신고 시 카톡 흐름**

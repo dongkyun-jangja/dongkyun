@@ -640,7 +640,7 @@ export default function DashboardScreen() {
                             styles.doneUndoText,
                             isConfirming && styles.doneUndoTextConfirming,
                           ]}>
-                            {isConfirming ? '정말?' : '취소'}
+                            {isConfirming ? '취소할까요?' : '취소'}
                           </Text>
                         </Pressable>
                       );
