@@ -201,20 +201,27 @@ function StorePanel({
 
         {/* 배송 상품 목록 */}
         {store.items.length > 0 && (() => {
-          const hasBlack = store.items.some((i) => i.isBlack);
-          const hasWhisky = store.items.some((i) => i.isWhisky);
+          const blackCount = store.items.filter((i) => i.isBlack).length;
+          const rfidCount = store.items.filter((i) => i.isWhisky).length;
+          const hasBlack = blackCount > 0;
+          const hasWhisky = rfidCount > 0;
           return (
             <>
-              {hasBlack && (
-                <View style={styles.blackBanner}>
-                  <Ionicons name="diamond" size={13} color="#FFD700" />
-                  <Text style={styles.blackBannerText}>블랙멤버십 상품 포함 — 픽업 매장 인계 시 우선 처리해 주세요</Text>
-                </View>
-              )}
-              {hasWhisky && (
-                <View style={styles.rfidBanner}>
-                  <Ionicons name="wifi-outline" size={13} color={colors.white} />
-                  <Text style={styles.rfidBannerText}>위스키 상품 포함 — 배송 완료 전 RFID 태그를 확인해 주세요</Text>
+              {(hasBlack || hasWhisky) && (
+                <View style={styles.combinedBanner}>
+                  {hasBlack && (
+                    <View style={styles.combinedChip}>
+                      <Ionicons name="diamond" size={12} color="#EECB4E" />
+                      <Text style={[styles.combinedChipText, { color: '#EECB4E' }]}>블랙 {blackCount}개</Text>
+                    </View>
+                  )}
+                  {hasBlack && hasWhisky && <View style={styles.combinedDivider} />}
+                  {hasWhisky && (
+                    <View style={styles.combinedChip}>
+                      <Ionicons name="wifi-outline" size={12} color="#7EB8FF" />
+                      <Text style={[styles.combinedChipText, { color: '#7EB8FF' }]}>RFID {rfidCount}개</Text>
+                    </View>
+                  )}
                 </View>
               )}
               <View style={styles.sectionHeader}>
@@ -397,7 +404,7 @@ function StorePanel({
           </Pressable>
           <View style={styles.secondaryRow}>
             <Pressable style={styles.memoBtn} onPress={() => onMemo()}>
-              <Ionicons name="create-outline" size={14} color={colors.gray} />
+              <Ionicons name="create-outline" size={14} color="#5A4500" />
               <Text style={styles.memoBtnText}>메모</Text>
             </Pressable>
             <Pressable style={styles.issueBtn} onPress={() => onIssue(store.id)}>
@@ -891,7 +898,7 @@ export default function SplitDeliveryScreen() {
       {/* RFID 확인 팝업 */}
       {showRfidConfirm && (
         <Pressable style={styles.rfidOverlay} onPress={() => setShowRfidConfirm(false)}>
-          <Pressable style={styles.rfidModal} onPress={(e) => e.stopPropagation()}>
+          <Pressable style={[styles.rfidModal, { width: '82%' }]} onPress={(e) => e.stopPropagation()}>
             <View style={styles.rfidModalIcon}>
               <Ionicons name="wifi-outline" size={32} color={colors.white} />
             </View>
@@ -1006,13 +1013,15 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 13, fontWeight: '700', color: colors.black },
   sectionCount: { fontSize: 12, color: colors.gray },
 
-  // 블랙 멤버십
-  blackBanner:  { flexDirection: 'row', alignItems: 'flex-start', gap: 7, backgroundColor: '#1E1E1E', borderRadius: 8, padding: 10, marginBottom: 8 },
-  blackBannerText: { flex: 1, fontSize: 11, color: '#FFD700', lineHeight: 16 },
+  // 블랙 + RFID 통합 배너
+  combinedBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1A1A1A', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 8, marginHorizontal: 160 },
+  combinedChip:   { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 4 },
+  combinedChipText: { fontSize: 13, fontWeight: '700' },
+  combinedDivider: { width: 1, height: 14, backgroundColor: '#444', marginHorizontal: 6 },
+
+  // 상품 인라인 뱃지 (블랙/RFID)
   blackBadge:   { backgroundColor: '#1E1E1E', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, marginLeft: 5 },
   blackBadgeText:{ fontSize: 10, fontWeight: '700', color: '#FFD700' },
-
-  // RFID (위스키)
   rfidBanner:   { flexDirection: 'row', alignItems: 'flex-start', gap: 7, backgroundColor: '#1A3A5C', borderRadius: 8, padding: 10, marginBottom: 8 },
   rfidBannerText: { flex: 1, fontSize: 11, color: colors.white, lineHeight: 16 },
   rfidBadge:    { backgroundColor: '#1A3A5C', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, marginLeft: 5 },
@@ -1101,8 +1110,8 @@ const styles = StyleSheet.create({
   secondaryRow: { flexDirection: 'row', gap: 8 },
   retakeBtn:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.paper100, borderRadius: 10, paddingVertical: 10 },
   retakeBtnText:{ fontSize: 13, color: colors.gray },
-  memoBtn:      { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingVertical: 10, backgroundColor: colors.paper50 },
-  memoBtnText:  { fontSize: 13, color: colors.gray, fontWeight: '600' },
+  memoBtn:      { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: '#E6C200', borderRadius: 10, paddingVertical: 10, backgroundColor: '#FFD700' },
+  memoBtnText:  { fontSize: 13, color: '#5A4500', fontWeight: '700' },
   issueBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: colors.red + '50', borderRadius: 10, paddingVertical: 10, backgroundColor: colors.red50 },
   issueBtnText: { fontSize: 13, color: colors.red, fontWeight: '700' },
 

@@ -612,18 +612,27 @@ export default function StoreDetailScreen() {
                 <Text style={styles.sectionCount}>{store.items.length}종</Text>
               </View>
             </View>
-            {store.items.some((i) => i.isBlack) && (
-              <View style={styles.blackInfoBanner}>
-                <Ionicons name="diamond" size={13} color="#EECB4E" />
-                <Text style={styles.blackInfoText}>블랙멤버십 상품 포함 — 픽업 매장 인계 시 우선 처리해 주세요</Text>
-              </View>
-            )}
-            {store.items.some((i) => i.isWhisky) && (
-              <View style={styles.rfidInfoBanner}>
-                <Ionicons name="wifi-outline" size={13} color={colors.white} />
-                <Text style={styles.rfidInfoText}>위스키 상품 포함 — 배송 완료 전 RFID 태그를 확인해 주세요</Text>
-              </View>
-            )}
+            {(store.items.some((i) => i.isBlack) || store.items.some((i) => i.isWhisky)) && (() => {
+              const blackCount = store.items.filter((i) => i.isBlack).length;
+              const rfidCount = store.items.filter((i) => i.isWhisky).length;
+              return (
+                <View style={styles.combinedInfoBanner}>
+                  {blackCount > 0 && (
+                    <View style={styles.combinedInfoChip}>
+                      <Ionicons name="diamond" size={12} color="#EECB4E" />
+                      <Text style={[styles.combinedInfoChipText, { color: '#EECB4E' }]}>블랙 {blackCount}개</Text>
+                    </View>
+                  )}
+                  {blackCount > 0 && rfidCount > 0 && <View style={styles.combinedInfoDivider} />}
+                  {rfidCount > 0 && (
+                    <View style={styles.combinedInfoChip}>
+                      <Ionicons name="wifi-outline" size={12} color="#7EB8FF" />
+                      <Text style={[styles.combinedInfoChipText, { color: '#7EB8FF' }]}>RFID {rfidCount}개</Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
             <View style={styles.card}>
               {store.items.map((item, idx) => (
                 <ItemRow
@@ -1104,7 +1113,7 @@ export default function StoreDetailScreen() {
                 </Pressable>
                 <View style={styles.secondaryButtonRow}>
                   <Pressable style={styles.memoButton} onPress={() => setShowNotes(true)}>
-                    <Ionicons name="create-outline" size={15} color={colors.gray} />
+                    <Ionicons name="create-outline" size={15} color="#5A4500" />
                     <Text style={styles.memoButtonText}>메모</Text>
                     {uncheckedCount > 0 && <View style={styles.memoDot} />}
                   </Pressable>
@@ -1814,38 +1823,32 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#C44A00',
   },
-  blackInfoBanner: {
+  combinedInfoBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+    gap: 0,
     backgroundColor: '#1A1A1A',
     borderRadius: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 10,
+    marginHorizontal: 160,
   },
-  blackInfoText: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#EECB4E',
-    lineHeight: 17,
-  },
-  rfidInfoBanner: {
+  combinedInfoChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#1A3A5C',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginTop: 6,
+    gap: 5,
+    paddingHorizontal: 6,
   },
-  rfidInfoText: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.white,
-    lineHeight: 17,
+  combinedInfoChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  combinedInfoDivider: {
+    width: 1,
+    height: 14,
+    backgroundColor: '#444',
+    marginHorizontal: 4,
   },
 
   // 상품 행
@@ -2342,15 +2345,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: colors.paper50,
+    backgroundColor: '#FFD700',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#E6C200',
   },
   memoButtonText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: colors.gray,
+    fontWeight: '700',
+    color: '#5A4500',
   },
   memoDot: {
     width: 7,
