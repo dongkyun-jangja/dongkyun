@@ -86,7 +86,8 @@ function buildKakaoText(course: Course) {
     const mark = store.status === 'delivered' ? '✅' : store.status === 'issue' ? '⚠️' : '⏳';
     const timeStr = store.deliveredAt ? ` ${store.deliveredAt}` : '';
     const blackFlag = store.items.some((i) => i.isBlack) ? ' ◆' : '';
-    lines.push(`${idx + 1}. ${mark} ${store.name}${blackFlag}${timeStr}`);
+    const coldFlag = store.items.some((i) => i.isColdChain) ? ' ❄' : '';
+    lines.push(`${idx + 1}. ${mark} ${store.name}${blackFlag}${coldFlag}${timeStr}`);
 
     store.items.forEach((item) => {
       const actualQty = item.actualQuantity ?? item.quantity;

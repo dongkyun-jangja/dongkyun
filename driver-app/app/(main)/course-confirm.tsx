@@ -212,14 +212,14 @@ export default function CourseConfirmScreen() {
   );
 
   const aggregatedProducts = useMemo(() => {
-    const map = new Map<string, { name: string; quantity: number; isBlack: boolean }>();
+    const map = new Map<string, { name: string; quantity: number; isBlack: boolean; isColdChain: boolean }>();
     sortedStores.forEach((s) =>
       s.items.forEach((item: any) => {
         const existing = map.get(item.name);
         if (existing) {
           existing.quantity += item.quantity;
         } else {
-          map.set(item.name, { name: item.name, quantity: item.quantity, isBlack: !!item.isBlack });
+          map.set(item.name, { name: item.name, quantity: item.quantity, isBlack: !!item.isBlack, isColdChain: !!item.isColdChain });
         }
       }),
     );
@@ -599,6 +599,11 @@ export default function CourseConfirmScreen() {
                       <Text style={styles.productBlackBadgeText}>블랙</Text>
                     </View>
                   )}
+                  {p.isColdChain && (
+                    <View style={styles.productColdChainBadge}>
+                      <Text style={styles.productColdChainBadgeText}>콜드체인</Text>
+                    </View>
+                  )}
                   <Text style={styles.productListQty}>{p.quantity}개</Text>
                 </View>
               ))}
@@ -783,6 +788,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#EECB4E', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1,
   },
   productBlackBadgeText: { fontSize: 9, fontWeight: '800', color: '#1A1A1A', letterSpacing: 0.3 },
+  productColdChainBadge: {
+    backgroundColor: '#003A45', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1,
+  },
+  productColdChainBadgeText: { fontSize: 9, fontWeight: '800', color: '#00D8FF', letterSpacing: 0.3 },
   productListQty: {
     fontSize: 12, fontWeight: '700', color: colors.white,
     fontVariant: ['tabular-nums'], minWidth: 32, textAlign: 'right',

@@ -119,6 +119,12 @@ const ItemRow = React.memo(function ItemRow({
               <Text style={styles.itemRfidBadgeText}>RFID</Text>
             </View>
           )}
+          {item.isColdChain && (
+            <View style={styles.itemColdChainBadge}>
+              <Ionicons name="snow-outline" size={8} color="#00D8FF" />
+              <Text style={styles.itemColdChainBadgeText}>콜드체인</Text>
+            </View>
+          )}
         </View>
         <View style={styles.itemMeta}>
           <Text style={styles.itemCode}>#{item.code}</Text>
@@ -612,9 +618,10 @@ export default function StoreDetailScreen() {
                 <Text style={styles.sectionCount}>{store.items.length}종</Text>
               </View>
             </View>
-            {(store.items.some((i) => i.isBlack) || store.items.some((i) => i.isWhisky)) && (() => {
+            {(store.items.some((i) => i.isBlack) || store.items.some((i) => i.isWhisky) || store.items.some((i) => i.isColdChain)) && (() => {
               const blackCount = store.items.filter((i) => i.isBlack).length;
               const rfidCount = store.items.filter((i) => i.isWhisky).length;
+              const coldCount = store.items.filter((i) => i.isColdChain).length;
               return (
                 <View style={styles.combinedInfoBanner}>
                   {blackCount > 0 && (
@@ -628,6 +635,13 @@ export default function StoreDetailScreen() {
                     <View style={styles.combinedInfoChip}>
                       <Ionicons name="wifi-outline" size={12} color="#7EB8FF" />
                       <Text style={[styles.combinedInfoChipText, { color: '#7EB8FF' }]}>RFID {rfidCount}개</Text>
+                    </View>
+                  )}
+                  {(blackCount > 0 || rfidCount > 0) && coldCount > 0 && <View style={styles.combinedInfoDivider} />}
+                  {coldCount > 0 && (
+                    <View style={styles.combinedInfoChip}>
+                      <Ionicons name="snow-outline" size={12} color="#00D8FF" />
+                      <Text style={[styles.combinedInfoChipText, { color: '#00D8FF' }]}>콜드체인 {coldCount}개</Text>
                     </View>
                   )}
                 </View>
@@ -1915,6 +1929,22 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     color: colors.white,
+    letterSpacing: 0.3,
+  },
+  itemColdChainBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#003A45',
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    flexShrink: 0,
+  },
+  itemColdChainBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#00D8FF',
     letterSpacing: 0.3,
   },
   itemLeft: { flex: 1, gap: 3 },

@@ -74,14 +74,22 @@ function ListItem({
 
       {/* 중간: 매장 정보 */}
       <View style={styles.listBody}>
-        <Text style={[styles.listName, isSelected && { color: colors.orange }]} numberOfLines={1}>
-          {store.name}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          {store.isManual && (
+            <View style={{ backgroundColor: '#6B7280', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
+              <Text style={{ fontSize: 9, color: colors.white, fontWeight: '700' }}>수동</Text>
+            </View>
+          )}
+          <Text style={[styles.listName, isSelected && { color: colors.orange }]} numberOfLines={1}>
+            {store.name}
+          </Text>
+        </View>
         <Text style={styles.listItems} numberOfLines={1}>
           {itemSummary}{hasMore ? '  +' + (store.items.length - 2) : ''}
           {hasPickup ? '  ↩회수' : ''}
         </Text>
       </View>
+
 
       {/* 오른쪽: 상태 */}
       <View style={[styles.listBadge, { backgroundColor: statusColor + '22' }]}>
@@ -203,11 +211,13 @@ function StorePanel({
         {store.items.length > 0 && (() => {
           const blackCount = store.items.filter((i) => i.isBlack).length;
           const rfidCount = store.items.filter((i) => i.isWhisky).length;
+          const coldCount = store.items.filter((i) => i.isColdChain).length;
           const hasBlack = blackCount > 0;
           const hasWhisky = rfidCount > 0;
+          const hasColdChain = coldCount > 0;
           return (
             <>
-              {(hasBlack || hasWhisky) && (
+              {(hasBlack || hasWhisky || hasColdChain) && (
                 <View style={styles.combinedBanner}>
                   {hasBlack && (
                     <View style={styles.combinedChip}>
@@ -220,6 +230,13 @@ function StorePanel({
                     <View style={styles.combinedChip}>
                       <Ionicons name="wifi-outline" size={12} color="#7EB8FF" />
                       <Text style={[styles.combinedChipText, { color: '#7EB8FF' }]}>RFID {rfidCount}개</Text>
+                    </View>
+                  )}
+                  {(hasBlack || hasWhisky) && hasColdChain && <View style={styles.combinedDivider} />}
+                  {hasColdChain && (
+                    <View style={styles.combinedChip}>
+                      <Ionicons name="snow-outline" size={12} color="#00D8FF" />
+                      <Text style={[styles.combinedChipText, { color: '#00D8FF' }]}>콜드체인 {coldCount}개</Text>
                     </View>
                   )}
                 </View>
@@ -244,6 +261,11 @@ function StorePanel({
                           {item.isWhisky && (
                             <View style={styles.rfidBadge}>
                               <Text style={styles.rfidBadgeText}>RFID</Text>
+                            </View>
+                          )}
+                          {item.isColdChain && (
+                            <View style={styles.coldChainBadge}>
+                              <Text style={styles.coldChainBadgeText}>콜드체인</Text>
                             </View>
                           )}
                         </View>
@@ -437,7 +459,7 @@ function StorePanel({
 // ─── 메인 화면 ───────────────────────────────────────────────────────────
 export default function SplitDeliveryScreen() {
   const { storeId } = useLocalSearchParams<{ storeId?: string }>();
-  const { course, updateStoreStatus, addStorePhoto, resetIssueStore, cancelStore } = useDelivery();
+  const { course, updateStoreStatus, addStorePhoto, resetIssueStore, cancelStore, addManualStore } = useDelivery();
   const { addCancelLog } = useCancelLog();
   const { openChat: openKakaoChat } = useKakaoChat();
   const router = useRouter();
@@ -467,6 +489,33 @@ export default function SplitDeliveryScreen() {
 
   // ── 이슈 초기화 모달
   const [issueResetTargetId, setIssueResetTargetId] = useState<string | null>(null);
+
+  // ── 수동 추가
+  const [showAddStore, setShowAddStore] = useState(false);
+  const [addName, setAddName] = useState('');
+  const [addAddress, setAddAddress] = useState('');
+  const [addPhone, setAddPhone] = useState('');
+  const [addItems, setAddItems] = useState([{ name: '', quantity: '' }]);
+
+  const resetAddForm = useCallback(() => {
+    setAddName(''); setAddAddress(''); setAddPhone('');
+    setAddItems([{ name: '', quantity: '' }]);
+  }, []);
+
+  const handleAddStore = useCallback(() => {
+    const trimmed = addName.trim();
+    if (!trimmed) { Alert.alert('매장명을 입력해 주세요.'); return; }
+    const validItems = addItems.filter((i) => i.name.trim() && Number(i.quantity) > 0);
+    if (validItems.length === 0) { Alert.alert('상품명과 수량을 입력해 주세요.'); return; }
+    addManualStore({
+      name: trimmed,
+      address: addAddress.trim(),
+      phone: addPhone.trim(),
+      items: validItems.map((i) => ({ name: i.name.trim(), quantity: Number(i.quantity) })),
+    });
+    setShowAddStore(false);
+    resetAddForm();
+  }, [addName, addAddress, addPhone, addItems, addManualStore, resetAddForm]);
 
   // ── 매장 검색
   const [showSearch, setShowSearch] = useState(false);
@@ -679,20 +728,30 @@ export default function SplitDeliveryScreen() {
             {doneCount}/{totalCount} 완료
           </Text>
         </View>
-        <Pressable
-          style={({ pressed }) => [styles.searchToggleBtn, pressed && { opacity: 0.6 }]}
-          onPress={toggleSearch}
-          hitSlop={8}
-        >
-          <Ionicons
-            name={showSearch ? 'close-outline' : 'search-outline'}
-            size={15}
-            color={colors.orange}
-          />
-          <Text style={styles.searchToggleText}>
-            매장명
-          </Text>
-        </Pressable>
+        <View style={styles.headerRight}>
+          <Pressable
+            style={({ pressed }) => [styles.addStoreBtn, pressed && { opacity: 0.6 }]}
+            onPress={() => setShowAddStore(true)}
+            hitSlop={8}
+          >
+            <Ionicons name="add-circle-outline" size={15} color={colors.orange} />
+            <Text style={styles.searchToggleText}>수동추가</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.searchToggleBtn, pressed && { opacity: 0.6 }]}
+            onPress={toggleSearch}
+            hitSlop={8}
+          >
+            <Ionicons
+              name={showSearch ? 'close-outline' : 'search-outline'}
+              size={15}
+              color={colors.orange}
+            />
+            <Text style={styles.searchToggleText}>
+              매장명
+            </Text>
+          </Pressable>
+        </View>
       </View>
 
       {/* 검색 바 */}
@@ -895,6 +954,66 @@ export default function SplitDeliveryScreen() {
       })()}
       <NotesModal visible={showNotes} onClose={() => setShowNotes(false)} />
 
+      {/* 수동 매장 추가 모달 */}
+      <Modal visible={showAddStore} animationType="slide" transparent onRequestClose={() => { setShowAddStore(false); resetAddForm(); }}>
+        <Pressable style={styles.rfidOverlay} onPress={() => { setShowAddStore(false); resetAddForm(); }}>
+          <Pressable style={styles.addStoreModal} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.addStoreTitle}>매장 수동 추가</Text>
+
+            <Text style={styles.addStoreLabel}>매장명 *</Text>
+            <TextInput style={styles.addStoreInput} placeholder="매장명 입력" placeholderTextColor={colors.gray} value={addName} onChangeText={setAddName} />
+
+            <Text style={styles.addStoreLabel}>주소</Text>
+            <TextInput style={styles.addStoreInput} placeholder="주소 입력" placeholderTextColor={colors.gray} value={addAddress} onChangeText={setAddAddress} />
+
+            <Text style={styles.addStoreLabel}>전화번호</Text>
+            <TextInput style={styles.addStoreInput} placeholder="전화번호 입력" placeholderTextColor={colors.gray} value={addPhone} onChangeText={setAddPhone} keyboardType="phone-pad" />
+
+            <Text style={styles.addStoreLabel}>상품 *</Text>
+            {addItems.map((item, idx) => (
+              <View key={idx} style={styles.addItemRow}>
+                <TextInput
+                  style={[styles.addStoreInput, { flex: 1, marginRight: 8 }]}
+                  placeholder="상품명"
+                  placeholderTextColor={colors.gray}
+                  value={item.name}
+                  onChangeText={(v) => setAddItems((prev) => prev.map((it, i) => i === idx ? { ...it, name: v } : it))}
+                />
+                <TextInput
+                  style={[styles.addStoreInput, { width: 70 }]}
+                  placeholder="수량"
+                  placeholderTextColor={colors.gray}
+                  value={item.quantity}
+                  onChangeText={(v) => setAddItems((prev) => prev.map((it, i) => i === idx ? { ...it, quantity: v } : it))}
+                  keyboardType="number-pad"
+                />
+                {addItems.length > 1 && (
+                  <Pressable onPress={() => setAddItems((prev) => prev.filter((_, i) => i !== idx))} hitSlop={8} style={{ marginLeft: 6 }}>
+                    <Ionicons name="close-circle" size={20} color={colors.gray} />
+                  </Pressable>
+                )}
+              </View>
+            ))}
+            <Pressable
+              style={styles.addItemPlusBtn}
+              onPress={() => setAddItems((prev) => [...prev, { name: '', quantity: '' }])}
+            >
+              <Ionicons name="add-circle-outline" size={16} color={colors.orange} />
+              <Text style={styles.addItemPlusBtnText}>상품 추가</Text>
+            </Pressable>
+
+            <View style={styles.addStoreActions}>
+              <Pressable style={styles.addStoreCancelBtn} onPress={() => { setShowAddStore(false); resetAddForm(); }}>
+                <Text style={styles.addStoreCancelText}>취소</Text>
+              </Pressable>
+              <Pressable style={styles.addStoreSaveBtn} onPress={handleAddStore}>
+                <Text style={styles.addStoreSaveText}>저장</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* RFID 확인 팝업 */}
       {showRfidConfirm && (
         <Pressable style={styles.rfidOverlay} onPress={() => setShowRfidConfirm(false)}>
@@ -955,8 +1074,22 @@ const styles = StyleSheet.create({
   container:    { flex: 1, backgroundColor: colors.paper100 },
   header:       { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.black, paddingHorizontal: 12, paddingVertical: 10 },
   backBtn:      { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.orange, paddingVertical: 5, paddingHorizontal: 10, borderRadius: 20 },
+  headerRight:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  addStoreBtn:  { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 5, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1.5, borderColor: colors.orange, backgroundColor: 'rgba(255,138,0,0.12)' },
   searchToggleBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 5, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1.5, borderColor: colors.orange, backgroundColor: 'rgba(255,138,0,0.12)' },
   searchToggleText: { fontSize: 12, color: colors.orange, fontWeight: '600' },
+  addStoreModal: { backgroundColor: colors.white, borderRadius: 20, marginHorizontal: 20, padding: 24, gap: 8, maxHeight: '90%' },
+  addStoreTitle: { fontSize: 17, fontWeight: '800', color: colors.black, marginBottom: 4, textAlign: 'center' },
+  addStoreLabel: { fontSize: 12, fontWeight: '700', color: colors.gray, marginTop: 4 },
+  addStoreInput: { backgroundColor: colors.paper100, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, color: colors.black, borderWidth: 1, borderColor: colors.paper200 },
+  addItemRow:   { flexDirection: 'row', alignItems: 'center' },
+  addItemPlusBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, alignSelf: 'flex-start', marginTop: 2 },
+  addItemPlusBtnText: { fontSize: 13, color: colors.orange, fontWeight: '600' },
+  addStoreActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  addStoreCancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: colors.paper200, alignItems: 'center' },
+  addStoreCancelText: { fontSize: 15, fontWeight: '700', color: colors.gray },
+  addStoreSaveBtn: { flex: 2, paddingVertical: 12, borderRadius: 12, backgroundColor: colors.orange, alignItems: 'center' },
+  addStoreSaveText: { fontSize: 15, fontWeight: '700', color: colors.white },
   searchBar: { backgroundColor: colors.black, paddingHorizontal: 12, paddingBottom: 10, gap: 0 },
   searchInputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.white, borderRadius: 10, borderWidth: 1.5, borderColor: colors.orange, paddingHorizontal: 10, paddingVertical: 6, gap: 6 },
   searchInput: { flex: 1, fontSize: 14, color: colors.black, paddingVertical: 0 },
@@ -1026,6 +1159,8 @@ const styles = StyleSheet.create({
   rfidBannerText: { flex: 1, fontSize: 11, color: colors.white, lineHeight: 16 },
   rfidBadge:    { backgroundColor: '#1A3A5C', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, marginLeft: 5 },
   rfidBadgeText: { fontSize: 10, fontWeight: '700', color: colors.white },
+  coldChainBadge: { backgroundColor: '#003A45', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, marginLeft: 5 },
+  coldChainBadgeText: { fontSize: 10, fontWeight: '700', color: '#00D8FF' },
   rfidOverlay:  { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center' },
   rfidModal:    { backgroundColor: colors.white, borderRadius: 20, marginHorizontal: 32, padding: 28, alignItems: 'center', gap: 12 },
   rfidModalIcon:{ width: 60, height: 60, borderRadius: 30, backgroundColor: '#1A3A5C', justifyContent: 'center', alignItems: 'center', marginBottom: 4 },

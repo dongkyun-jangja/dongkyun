@@ -39,6 +39,7 @@ interface DeliveryContextType {
   updatePickupDriverNote: (storeId: string, note: string) => void;
   resetIssueStore: (storeId: string) => void;  // 이슈 → 대기(다시 배송)
   cancelStore: (storeId: string) => void;      // 이슈 → 취소(목록에서 숨김, 이력은 이슈 유지)
+  addManualStore: (store: { name: string; address: string; phone: string; items: { name: string; quantity: number }[] }) => void;
 }
 
 const DeliveryContext = createContext<DeliveryContextType | null>(null);
@@ -449,6 +450,35 @@ export function DeliveryProvider({ children }: { children: React.ReactNode }) {
     [dateIndex],
   );
 
+  const addManualStore = useCallback(
+    (input: { name: string; address: string; phone: string; items: { name: string; quantity: number }[] }) => {
+      setCourses((prev) =>
+        prev.map((c, idx) => {
+          if (idx !== todayIndex) return c;
+          const maxOrder = c.stores.reduce((m, s) => Math.max(m, s.order), 0);
+          const newStore: import('../types').Store = {
+            id: `manual-${Date.now()}`,
+            code: '',
+            name: input.name,
+            address: input.address,
+            phone: input.phone,
+            status: 'pending',
+            isManual: true,
+            order: maxOrder + 1,
+            items: input.items.map((item, i) => ({
+              code: `manual-${Date.now()}-${i}`,
+              name: item.name,
+              quantity: item.quantity,
+              boxUnit: 1,
+            })),
+          };
+          return { ...c, stores: [...c.stores, newStore] };
+        }),
+      );
+    },
+    [todayIndex],
+  );
+
   const cancelStore = useCallback(
     (storeId: string) => {
       setCourses((prev) =>
@@ -493,6 +523,7 @@ export function DeliveryProvider({ children }: { children: React.ReactNode }) {
         updatePickupDriverNote,
         resetIssueStore,
         cancelStore,
+        addManualStore,
         resetTodayCourse,
       }}
     >

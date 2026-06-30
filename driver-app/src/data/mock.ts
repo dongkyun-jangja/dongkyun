@@ -375,6 +375,7 @@ export const mockCourse: Course = {
         { code: '20059', name: '바크스 룸 세이카스코 (750ml)', quantity: 6, boxUnit: 6, isWhisky: true },
         { code: '30701', name: '오스카 로디스 (750ml)', quantity: 12, boxUnit: 12, isBlack: true },
         { code: '30921', name: '아무 아라바이 알벡 (750ml)', quantity: 6, boxUnit: 6, isBlack: true, itemNote: '스크류캡 아님 — 코르크 손상 주의' },
+        { code: '40101', name: '생막걸리 (750ml)', quantity: 24, boxUnit: 12, isColdChain: true, itemNote: '냉장 보관 필수' },
       ],
       pickupItems: [
         { code: '20059', name: '바크스 룸 세이카스코 (750ml)', quantity: 6, boxUnit: 6, reason: '상품하자', plannedAction: '환불', shippedDate: '2026-04-22' },

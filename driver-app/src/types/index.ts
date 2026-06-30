@@ -29,6 +29,7 @@ export interface DeliveryItem {
   itemNote?: string; // 상품별 배송 주의사항
   isBlack?: boolean; // 블랙멤버십 상품
   isWhisky?: boolean; // 위스키 상품 — RFID 태그 필요
+  isColdChain?: boolean; // 콜드체인 상품 — 냉장 보관 필요
   actualQuantity?: number; // 실제 배송 수량 (불일치 시 기록)
   actualBags?: number;     // 실제 전달 쇼핑백 수 (부족 시 기록, bags>0 일 때만 의미 있음)
 }
@@ -52,6 +53,7 @@ export interface Store {
   phone: string;
   memo?: string;      // 배송 메모 (상단 고정)
   status: DeliveryStatus;
+  isManual?: boolean;    // 기사님이 앱에서 수동 추가한 매장
   isCancelled?: boolean; // 이슈 후 취소처리 — 활성 목록에서 숨김, 이력엔 issue로 유지
   order: number;      // 배송 순서 (1부터)
   items: DeliveryItem[];
