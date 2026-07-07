@@ -587,18 +587,15 @@ export default function SplitDeliveryScreen() {
   const [showRfidConfirm, setShowRfidConfirm] = useState(false);
   const [pendingDelivery, setPendingDelivery] = useState<{ id: string; photos: string[] } | null>(null);
 
+  // 콜드체인 확인 팝업
+  const [showColdChainConfirm, setShowColdChainConfirm] = useState(false);
+
   const doneCount = sortedStores.filter((s) => s.status === 'delivered').length;
   const totalCount = sortedStores.length;
 
-  const handleDelivered = useCallback(
+  // 배송 완료 최종 처리 (모든 팝업 확인 후)
+  const finalizeDelivery = useCallback(
     (id: string, photos: string[]) => {
-      const store = sortedStores.find((s) => s.id === id);
-      const hasWhisky = store?.items.some((i) => i.isWhisky) ?? false;
-      if (hasWhisky) {
-        setPendingDelivery({ id, photos });
-        setShowRfidConfirm(true);
-        return;
-      }
       updateStoreStatus(id, 'delivered', photos);
       const nextPending = sortedStores.find(
         (s) => s.status === 'pending' && s.id !== id,
@@ -614,23 +611,48 @@ export default function SplitDeliveryScreen() {
     [updateStoreStatus, sortedStores, router, showDeliveryDonePopup],
   );
 
+  const handleDelivered = useCallback(
+    (id: string, photos: string[]) => {
+      const store = sortedStores.find((s) => s.id === id);
+      const hasWhisky = store?.items.some((i) => i.isWhisky) ?? false;
+      const hasColdChain = store?.items.some((i) => i.isColdChain) ?? false;
+      if (hasWhisky) {
+        setPendingDelivery({ id, photos });
+        setShowRfidConfirm(true);
+        return;
+      }
+      if (hasColdChain) {
+        setPendingDelivery({ id, photos });
+        setShowColdChainConfirm(true);
+        return;
+      }
+      finalizeDelivery(id, photos);
+    },
+    [finalizeDelivery, sortedStores],
+  );
+
   const confirmRfidAndDeliver = useCallback(() => {
     if (!pendingDelivery) return;
     setShowRfidConfirm(false);
     const { id, photos } = pendingDelivery;
+    // RFID 확인 후 콜드체인 여부 추가 확인
+    const store = sortedStores.find((s) => s.id === id);
+    const hasColdChain = store?.items.some((i) => i.isColdChain) ?? false;
+    if (hasColdChain) {
+      setShowColdChainConfirm(true);
+      return;
+    }
     setPendingDelivery(null);
-    updateStoreStatus(id, 'delivered', photos);
-    const nextPending = sortedStores.find(
-      (s) => s.status === 'pending' && s.id !== id,
-    );
-    showDeliveryDonePopup(() => {
-      if (nextPending) {
-        setSelectedId(nextPending.id);
-      } else {
-        router.replace('/(main)/(tabs)/dashboard');
-      }
-    });
-  }, [pendingDelivery, updateStoreStatus, sortedStores, router, showDeliveryDonePopup]);
+    finalizeDelivery(id, photos);
+  }, [pendingDelivery, finalizeDelivery, sortedStores]);
+
+  const confirmColdChainAndDeliver = useCallback(() => {
+    if (!pendingDelivery) return;
+    setShowColdChainConfirm(false);
+    const { id, photos } = pendingDelivery;
+    setPendingDelivery(null);
+    finalizeDelivery(id, photos);
+  }, [pendingDelivery, finalizeDelivery]);
 
   const handleUndoConfirm = useCallback(() => {
     if (!undoTarget || undoReason.trim().length === 0) return;
@@ -1035,6 +1057,26 @@ export default function SplitDeliveryScreen() {
         </Pressable>
       )}
 
+      {showColdChainConfirm && (
+        <Pressable style={styles.rfidOverlay} onPress={() => setShowColdChainConfirm(false)}>
+          <Pressable style={[styles.rfidModal, { width: '82%' }]} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.coldChainModalIcon}>
+              <Ionicons name="snow-outline" size={32} color={colors.white} />
+            </View>
+            <Text style={styles.rfidModalTitle}>냉장고(셀러)에 보관 필요</Text>
+            <Text style={styles.rfidModalDesc}>콜드체인 상품입니다.{'\n'}냉장고(셀러)에 넣으셨나요?</Text>
+            <View style={styles.rfidModalBtns}>
+              <Pressable style={styles.rfidModalBtnCancel} onPress={() => setShowColdChainConfirm(false)}>
+                <Text style={styles.rfidModalBtnCancelText}>아직이요</Text>
+              </Pressable>
+              <Pressable style={styles.coldChainModalBtnConfirm} onPress={confirmColdChainAndDeliver}>
+                <Text style={styles.rfidModalBtnConfirmText}>완료했어요</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      )}
+
       {/* 배송 완료 팝업 */}
       {showDonePopup && (
         <Pressable
@@ -1171,6 +1213,8 @@ const styles = StyleSheet.create({
   rfidModalBtnCancelText: { fontSize: 14, fontWeight: '600', color: colors.gray },
   rfidModalBtnConfirm: { flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: '#1A3A5C', alignItems: 'center' },
   rfidModalBtnConfirmText: { fontSize: 14, fontWeight: '700', color: colors.white },
+  coldChainModalIcon: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#00A8CC', justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
+  coldChainModalBtnConfirm: { flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: '#00A8CC', alignItems: 'center' },
 
   // 쇼핑백
   bagItemCard:       { borderWidth: 1.5, borderColor: colors.orange + '55' },
