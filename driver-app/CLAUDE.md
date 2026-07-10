@@ -79,7 +79,7 @@ export type PickupFailKind = '매장에주류없음' | '중복오기입' | '매�
 
 interface DeliveryItem {
   code, name, quantity, boxUnit;
-  bags?, imageUrl?, itemNote?, isBlack?;
+  bags?, itemNote?, isBlack?;
   actualQuantity?;  // 수량 불일치 기록
   actualBags?;      // 쇼핑백 부족 기록
 }

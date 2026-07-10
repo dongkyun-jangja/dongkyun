@@ -41,33 +41,6 @@ const PICKUP_FAIL_KIND_OPTIONS: { kind: PickupFailKind; label: string; hint: str
 ];
 
 // 상품 이미지 확대 모달
-function ImageZoomModal({
-  uri,
-  visible,
-  onClose,
-}: {
-  uri: string;
-  visible: boolean;
-  onClose: () => void;
-}) {
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Image
-          source={{ uri }}
-          style={styles.modalImage}
-          resizeMode="contain"
-        />
-        <Pressable style={styles.modalCloseBtn} onPress={onClose} hitSlop={12}>
-          <View style={styles.modalCloseCircle}>
-            <Ionicons name="close" size={20} color={colors.white} />
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
-
 // 상품 행 컴포넌트
 const ItemRow = React.memo(function ItemRow({
   item,
@@ -80,29 +53,8 @@ const ItemRow = React.memo(function ItemRow({
   const requestedBoxes = Math.floor(requestedQty / item.boxUnit);
   const requestedBags = item.bags ?? 0;
 
-  const [zoomVisible, setZoomVisible] = useState(false);
-
-  // imageUrl이 없으면 상품 코드 기반 플레이스홀더
-  const imageUri = item.imageUrl ?? `https://picsum.photos/seed/${item.code}/120/120`;
-
   return (
     <View style={[styles.itemRow, !isLast && styles.itemRowBorder]}>
-      {/* 상품 이미지 썸네일 */}
-      <Pressable
-        onPress={() => setZoomVisible(true)}
-        style={({ pressed }) => [styles.itemThumbWrap, pressed && { opacity: 0.8 }]}
-        hitSlop={4}
-      >
-        <Image
-          source={{ uri: imageUri }}
-          style={styles.itemThumb}
-          resizeMode="cover"
-        />
-        <View style={styles.itemThumbZoomIcon}>
-          <Ionicons name="expand-outline" size={10} color={colors.white} />
-        </View>
-      </Pressable>
-
       <View style={styles.itemLeft}>
         <View style={styles.itemNameRow}>
           <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
@@ -144,11 +96,6 @@ const ItemRow = React.memo(function ItemRow({
         <Text style={styles.itemQtySub}>{requestedQty}개</Text>
       </View>
 
-      <ImageZoomModal
-        uri={imageUri}
-        visible={zoomVisible}
-        onClose={() => setZoomVisible(false)}
-      />
     </View>
   );
 });
@@ -1877,28 +1824,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.paper100,
   },
-  itemThumbWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: 10,
-    overflow: 'hidden',
-    flexShrink: 0,
-    position: 'relative',
-  },
-  itemThumb: {
-    width: 52,
-    height: 52,
-    borderRadius: 10,
-    backgroundColor: colors.paper200,
-  },
-  itemThumbZoomIcon: {
-    position: 'absolute',
-    bottom: 3,
-    right: 3,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    borderRadius: 4,
-    padding: 2,
-  },
   itemBlackBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2031,33 +1956,6 @@ const styles = StyleSheet.create({
   },
 
   // 이미지 확대 모달
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.88)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalImage: {
-    width: SCREEN_W - 40,
-    height: SCREEN_W - 40,
-    borderRadius: 16,
-  },
-  modalCloseBtn: {
-    position: 'absolute',
-    top: 60,
-    right: 20,
-  },
-  modalCloseCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
-  },
-
   // 특이사항
   noteInput: {
     fontSize: 14,

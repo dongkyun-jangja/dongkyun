@@ -19,8 +19,8 @@ const mockCourse20250808: Course = {
       address: '서울시 강남구 테헤란로 123', phone: '02-1234-5678',
       status: 'delivered', order: 1, deliveredAt: '07:42', photoUris: ['delivered'],
       items: [
-        { code: '00001', name: '청하 (300ml)', quantity: 360, boxUnit: 30, bags: 3, imageUrl: 'https://picsum.photos/seed/00001/120/120' },
-        { code: '00077', name: '참이슬 (1.5L)', quantity: 24, boxUnit: 6, imageUrl: 'https://picsum.photos/seed/00077/120/120' },
+        { code: '00001', name: '청하 (300ml)', quantity: 360, boxUnit: 30, bags: 3 },
+        { code: '00077', name: '참이슬 (1.5L)', quantity: 24, boxUnit: 6 },
       ],
     },
     {

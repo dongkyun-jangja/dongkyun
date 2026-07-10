@@ -25,8 +25,7 @@ export interface DeliveryItem {
   quantity: number; // 개수 (요청)
   boxUnit: number;  // box당 개수
   bags?: number;    // 쇼핑백 수 (요청)
-  imageUrl?: string; // 상품 이미지 URL (실서비스: DB에서 조회)
-  itemNote?: string; // 상품별 배송 주의사항
+itemNote?: string; // 상품별 배송 주의사항
   isBlack?: boolean; // 블랙멤버십 상품
   isWhisky?: boolean; // 위스키 상품 — RFID 태그 필요
   isColdChain?: boolean; // 콜드체인 상품 — 냉장 보관 필요
