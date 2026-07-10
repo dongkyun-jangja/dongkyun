@@ -1120,7 +1120,7 @@ const styles = StyleSheet.create({
   addStoreBtn:  { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 5, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1.5, borderColor: colors.orange, backgroundColor: 'rgba(255,138,0,0.12)' },
   searchToggleBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 5, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1.5, borderColor: colors.orange, backgroundColor: 'rgba(255,138,0,0.12)' },
   searchToggleText: { fontSize: 12, color: colors.orange, fontWeight: '600' },
-  addStoreModal: { backgroundColor: colors.white, borderRadius: 20, marginHorizontal: 20, padding: 24, gap: 8, maxHeight: '90%' },
+  addStoreModal: { backgroundColor: colors.white, borderRadius: 20, width: '92%', maxWidth: 500, alignSelf: 'center', padding: 24, gap: 8, maxHeight: '90%' },
   addStoreTitle: { fontSize: 17, fontWeight: '800', color: colors.black, marginBottom: 4, textAlign: 'center' },
   addStoreLabel: { fontSize: 12, fontWeight: '700', color: colors.gray, marginTop: 4 },
   addStoreInput: { backgroundColor: colors.paper100, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, color: colors.black, borderWidth: 1, borderColor: colors.paper200 },
@@ -1189,7 +1189,7 @@ const styles = StyleSheet.create({
   sectionCount: { fontSize: 12, color: colors.gray },
 
   // 블랙 + RFID 통합 배너
-  combinedBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1A1A1A', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 8, marginHorizontal: 160 },
+  combinedBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1A1A1A', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 8, alignSelf: 'center', maxWidth: 400 },
   combinedChip:   { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 4 },
   combinedChipText: { fontSize: 13, fontWeight: '700' },
   combinedDivider: { width: 1, height: 14, backgroundColor: '#444', marginHorizontal: 6 },
