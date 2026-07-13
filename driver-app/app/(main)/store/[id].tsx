@@ -1793,7 +1793,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    marginHorizontal: 160,
+    alignSelf: 'center',
+    maxWidth: 400,
   },
   combinedInfoChip: {
     flexDirection: 'row',
