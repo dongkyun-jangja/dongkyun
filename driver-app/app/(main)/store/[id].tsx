@@ -483,7 +483,7 @@ export default function StoreDetailScreen() {
 
       {/* 커스텀 헤더 */}
       <View style={styles.header}>
-        <Pressable style={styles.backButton} onPress={() => router.replace('/(main)/(tabs)/deliveries' as any)} hitSlop={8}>
+        <Pressable style={styles.backButton} onPress={() => router.back()} hitSlop={8}>
           <Ionicons name="chevron-back" size={22} color={colors.black} />
           <Text style={styles.backText}>목록</Text>
         </Pressable>
