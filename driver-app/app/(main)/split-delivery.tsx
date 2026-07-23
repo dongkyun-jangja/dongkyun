@@ -253,7 +253,7 @@ function StorePanel({
               {/* 상품 놓는 위치 */}
               <View style={styles.placementRow}>
                 <View style={styles.placementLeft}>
-                  <Ionicons name="location-outline" size={14} color={colors.gray} />
+                  <Ionicons name="location-outline" size={15} color={colors.orange} />
                   <Text style={styles.placementLabel}>상품 놓는 위치</Text>
                 </View>
                 <View style={styles.placementRight}>
@@ -1482,14 +1482,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: colors.paper100,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    marginHorizontal: 12,
+    marginBottom: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: colors.white,
+    borderRadius: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.orange,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   placementLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  placementLabel: { fontSize: 13, color: colors.gray, fontWeight: '600' },
+  placementLabel: { fontSize: 13, color: colors.black, fontWeight: '700' },
   placementRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   placementViewBtn: {
     flexDirection: 'row',
