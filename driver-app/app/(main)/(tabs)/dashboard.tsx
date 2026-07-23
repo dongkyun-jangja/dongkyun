@@ -18,7 +18,6 @@ import { useDelivery } from '../../../src/context/DeliveryContext';
 import { useCancelLog } from '../../../src/hooks/useCancelLog';
 import { useKakaoChat } from '../../../src/hooks/useKakaoChat';
 import { useNotes } from '../../../src/hooks/useNotes';
-import { usePushNotifications } from '../../../src/hooks/usePushNotifications';
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -68,7 +67,6 @@ export default function DashboardScreen() {
   const prevAllDone = useRef(false);
   const isFirstMount = useRef(true);
   const { openChat: openKakaoChat, isConfigured: isChatConfigured } = useKakaoChat();
-  const { granted: pushGranted, loaded: pushLoaded } = usePushNotifications();
   const { addCancelLog } = useCancelLog();
   const { uncheckedCount } = useNotes();
   const [showNotes, setShowNotes] = useState(false);
@@ -339,30 +337,14 @@ export default function DashboardScreen() {
                 <Ionicons name="create-outline" size={20} color="rgba(255,255,255,0.85)" />
                 {uncheckedCount > 0 && <View style={styles.settingsDot} />}
               </Pressable>
-              {/* 알림 버튼 */}
-              {/* 우선순위: 푸시 미허용(긴급) > 카톡 미설정. 동시에 2개 도트 노출 방지 */}
-              <Pressable
-                style={({ pressed }) => [styles.settingsBtn, pressed && { opacity: 0.7 }]}
-                onPress={() => router.push('/(main)/notifications')}
-                hitSlop={8}
-              >
-                <Ionicons
-                  name={pushLoaded && !pushGranted ? 'notifications-off-outline' : 'notifications-outline'}
-                  size={20}
-                  color="rgba(255,255,255,0.85)"
-                />
-                {pushLoaded && !pushGranted && <View style={styles.settingsDot} />}
-              </Pressable>
-              {/* 설정 버튼 — 푸시 도트 떠있으면 카톡 도트 숨김 */}
+              {/* 설정 버튼 */}
               <Pressable
                 style={({ pressed }) => [styles.settingsBtn, pressed && { opacity: 0.7 }]}
                 onPress={() => router.push('/(main)/settings')}
                 hitSlop={8}
               >
                 <Ionicons name="settings-outline" size={20} color="rgba(255,255,255,0.85)" />
-                {!isChatConfigured && !(pushLoaded && !pushGranted) && (
-                  <View style={styles.settingsDot} />
-                )}
+                {!isChatConfigured && <View style={styles.settingsDot} />}
               </Pressable>
               <View style={styles.dateBadge}>
                 <Text style={styles.dateBadgeText}>{formatDate(course.date)}</Text>
@@ -665,16 +647,6 @@ export default function DashboardScreen() {
               )}
             </View>
           )}
-
-          {/* ⑥ 오늘 배송 요약 */}
-          <Pressable
-            style={({ pressed }) => [styles.summaryBtn, pressed && { opacity: 0.88 }]}
-            onPress={() => router.push('/(main)/today-summary' as any)}
-          >
-            <Ionicons name="document-text-outline" size={16} color={colors.black} />
-            <Text style={styles.summaryBtnText}>오늘 배송 요약</Text>
-            <Ionicons name="chevron-forward" size={14} color={colors.gray} />
-          </Pressable>
 
           {/* ⑦ 연락 수단 */}
           <View style={styles.contactSection}>
@@ -1205,25 +1177,6 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
 
-
-  // 오늘 전표 버튼
-  summaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: colors.white,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  summaryBtnText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.black,
-  },
 
   // ⑦ 연락 수단
   contactSection: { gap: 10 },
