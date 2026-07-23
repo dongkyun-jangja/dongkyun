@@ -98,109 +98,60 @@ function CalendarDay({
   );
 }
 
-// ─── 펼쳐진 매장 행 (전표 형태) ────────────────────────────────────
+// ─── 펼쳐진 매장 행 (오늘 목록 카드 스타일) ────────────────────────
 function StoreDetailRow({
   store,
-  isLast,
   onPress,
 }: {
   store: Store;
   isLast: boolean;
   onPress: () => void;
 }) {
-  const isDelivered = store.status === 'delivered';
-  const isIssue = store.status === 'issue';
-  const totalBags = store.items.reduce((s, i) => s + (i.bags ?? 0), 0);
+  const STATUS_LABEL: Record<string, string> = { pending: '대기', delivered: '완료', issue: '이슈' };
+  const STATUS_COLOR: Record<string, string> = { pending: colors.gray, delivered: colors.orange, issue: colors.red };
+
+  const itemSummary = store.items
+    .slice(0, 2)
+    .map((i) => `${i.name} ${Math.floor(i.quantity / i.boxUnit)}박스`)
+    .join('  ');
+  const moreCount = store.items.length - 2;
+  const hasBlack = store.items.some((i) => i.isBlack);
+  const hasRfid = store.items.some((i) => i.isWhisky);
+  const hasCold = store.items.some((i) => i.isColdChain);
 
   return (
     <Pressable
-      style={({ pressed }) => [
-        styles.storeRow,
-        !isLast && styles.storeRowBorder,
-        isIssue && styles.storeRowIssue,
-        pressed && { backgroundColor: colors.paper100 },
-      ]}
+      style={({ pressed }) => [styles.storeCard, pressed && { opacity: 0.75 }]}
       onPress={onPress}
     >
-      {/* 순서 원 */}
-      <View style={[
-        styles.orderCircle,
-        isDelivered && styles.orderCircleDone,
-        isIssue && styles.orderCircleIssue,
-      ]}>
-        {isDelivered
-          ? <Ionicons name="checkmark" size={12} color={colors.white} />
-          : isIssue
-          ? <Ionicons name="alert" size={10} color={colors.white} />
-          : <Text style={styles.orderText}>{store.order}</Text>
-        }
+      <View style={styles.orderBadge}>
+        <Text style={styles.orderText}>{store.order}</Text>
       </View>
 
-      {/* 내용 */}
-      <View style={styles.storeDetailContent}>
-        {/* 매장명 + 상태 */}
+      <View style={styles.storeCardBody}>
         <View style={styles.storeNameRow}>
-          <Text style={[
-            styles.storeName,
-            isDelivered && styles.storeNameDone,
-          ]} numberOfLines={1}>
-            {store.name}
-          </Text>
-          <StatusBadge status={store.status} deliveredAt={store.deliveredAt} />
+          <Text style={styles.storeName} numberOfLines={1}>{store.name}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: STATUS_COLOR[store.status] + '22' }]}>
+            <Text style={[styles.statusText, { color: STATUS_COLOR[store.status] }]}>
+              {STATUS_LABEL[store.status]}
+            </Text>
+          </View>
         </View>
 
-        {/* 주소 */}
-        <Text style={styles.storeAddress} numberOfLines={1}>{store.address}</Text>
+        <Text style={styles.itemSummary} numberOfLines={1}>
+          {itemSummary}{moreCount > 0 ? `  +${moreCount}` : ''}
+        </Text>
 
-        {/* 상품 목록 */}
-        <View style={styles.itemList}>
-          {store.items.map((item) => {
-            const boxes = item.boxUnit > 0 ? Math.floor(item.quantity / item.boxUnit) : 0;
-            return (
-              <View key={item.code} style={styles.itemLine}>
-                <View style={styles.itemDot} />
-                <Text style={styles.itemName} numberOfLines={1}>
-                  {item.name.split('(')[0].trim()}
-                </Text>
-                <Text style={styles.itemQty}>
-                  {boxes > 0 ? `${boxes}박스` : `${item.quantity}개`}
-                </Text>
-                {(item.bags ?? 0) > 0 && (
-                  <View style={styles.bagMini}>
-                    <Text style={styles.bagMiniText}>🛍{item.bags}</Text>
-                  </View>
-                )}
-              </View>
-            );
-          })}
-        </View>
-
-        {/* 특이사항 */}
-        {store.driverNote ? (
-          <View style={styles.noteRow}>
-            <Ionicons name="create-outline" size={11} color={colors.gray} />
-            <Text style={styles.noteText} numberOfLines={2}>{store.driverNote}</Text>
-          </View>
-        ) : null}
-
-        {/* 배송 메모 */}
-        {store.memo ? (
-          <View style={styles.memoRow}>
-            <Ionicons name="warning" size={11} color={colors.black} />
-            <Text style={styles.memoText} numberOfLines={1}>{store.memo}</Text>
-          </View>
-        ) : null}
-
-        {/* 이슈 안내 */}
-        {isIssue && (
-          <View style={styles.issueRow}>
-            <Ionicons name="alert-circle" size={12} color={colors.red} />
-            <Text style={styles.issueRowText}>이슈 신고됨 — 담당자 확인 필요</Text>
+        {(hasBlack || hasRfid || hasCold) && (
+          <View style={styles.chips}>
+            {hasBlack && <View style={styles.chipBlack}><Text style={styles.chipBlackText}>🖤 블랙</Text></View>}
+            {hasRfid && <View style={styles.chipRfid}><Text style={styles.chipRfidText}>📶 RFID</Text></View>}
+            {hasCold && <View style={styles.chipCold}><Text style={styles.chipColdText}>❄ 콜드</Text></View>}
           </View>
         )}
       </View>
 
-      <Ionicons name="chevron-forward" size={14} color={colors.border} />
+      <Ionicons name="chevron-forward" size={16} color={colors.border} />
     </Pressable>
   );
 }
@@ -738,80 +689,55 @@ const styles = StyleSheet.create({
 
   // 펼쳐진 매장 목록
   storeList: {
-    backgroundColor: colors.white,
-    borderBottomLeftRadius: 16, borderBottomRightRadius: 16,
-    borderTopWidth: 1, borderColor: colors.border,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 4,
   },
 
-  // 매장 행
-  storeRow: {
-    flexDirection: 'row', alignItems: 'flex-start',
-    paddingHorizontal: 16, paddingVertical: 12, gap: 10,
+  // 매장 카드 (오늘 목록 스타일)
+  storeCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.white, borderRadius: 14,
+    paddingVertical: 14, paddingHorizontal: 14, gap: 12,
+    marginBottom: 8,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
-  storeRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
-  storeRowIssue: { backgroundColor: 'rgba(220,38,38,0.03)' },
-
-  orderCircle: {
-    width: 28, height: 28, borderRadius: 14,
-    borderWidth: 1.5, borderColor: colors.orange,
+  orderBadge: {
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: colors.paper100,
     alignItems: 'center', justifyContent: 'center',
-    flexShrink: 0, marginTop: 2,
   },
-  orderCircleDone: { backgroundColor: colors.green, borderColor: colors.green },
-  orderCircleIssue: { backgroundColor: colors.red, borderColor: colors.red },
-  orderText: { fontSize: 11, fontWeight: '700', color: colors.orange },
-
-  // 매장 상세 내용
-  storeDetailContent: { flex: 1, gap: 5 },
+  orderText: { fontSize: 13, fontWeight: '700', color: colors.black },
+  storeCardBody: { flex: 1, gap: 4 },
   storeNameRow: {
     flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between', gap: 6,
+    justifyContent: 'space-between', gap: 8,
   },
-  storeName: { fontSize: 14, fontWeight: '600', color: colors.black, flex: 1 },
-  storeNameDone: { color: colors.gray },
-  storeAddress: { fontSize: 12, color: colors.gray },
+  storeName: { fontSize: 15, fontWeight: '700', color: colors.black, flex: 1 },
+  statusBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  statusText: { fontSize: 11, fontWeight: '700' },
+  itemSummary: { fontSize: 12, color: colors.gray },
+  chips: { flexDirection: 'row', gap: 6, marginTop: 2 },
+  chipBlack: { backgroundColor: '#1E1E1E', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  chipBlackText: { fontSize: 10, fontWeight: '700', color: '#FFD700' },
+  chipRfid: { backgroundColor: '#1A3A5C', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  chipRfidText: { fontSize: 10, fontWeight: '700', color: colors.white },
+  chipCold: { backgroundColor: '#003A45', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  chipColdText: { fontSize: 10, fontWeight: '700', color: '#00D8FF' },
+
+  // 매장별 모드 이슈 행
+  storeRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
+  storeRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  storeRowIssue: { backgroundColor: 'rgba(220,38,38,0.03)' },
+  orderCircle: { width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, borderColor: colors.orange, alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 },
+  orderCircleDone: { backgroundColor: colors.green, borderColor: colors.green },
+  orderCircleIssue: { backgroundColor: colors.red, borderColor: colors.red },
   storeInfo: { flex: 1, gap: 3 },
-
-  // 상품 목록
-  itemList: { gap: 3, marginTop: 2 },
-  itemLine: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-  },
-  itemDot: {
-    width: 4, height: 4, borderRadius: 2,
-    backgroundColor: colors.border, flexShrink: 0,
-  },
-  itemName: { flex: 1, fontSize: 12, color: colors.black, fontWeight: '400' },
-  itemQty: { fontSize: 12, fontWeight: '600', color: colors.orange, fontVariant: ['tabular-nums'] },
-  bagMini: {
-    backgroundColor: '#FFF5A5', borderRadius: 4,
-    paddingHorizontal: 4, paddingVertical: 1,
-  },
-  bagMiniText: { fontSize: 10, fontWeight: '600', color: '#1E1E1E' },
-
-  // 특이사항
-  noteRow: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 4,
-    backgroundColor: colors.paper100, borderRadius: 6,
-    paddingHorizontal: 7, paddingVertical: 4,
-  },
+  storeAddress: { fontSize: 12, color: colors.gray },
+  noteRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 4, backgroundColor: colors.paper100, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 4 },
   noteText: { flex: 1, fontSize: 11, color: colors.gray, lineHeight: 16 },
-
-  // 배송 메모
-  memoRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: colors.glow100, borderRadius: 6,
-    paddingHorizontal: 7, paddingVertical: 3,
-    alignSelf: 'flex-start',
-  },
-  memoText: { fontSize: 11, color: colors.black, fontWeight: '500' },
-
-  // 이슈
-  issueRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-  },
+  issueRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   issueRowText: { fontSize: 11, color: colors.red, fontWeight: '600' },
 
   // 달력
