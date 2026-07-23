@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useRef, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useMemo, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -108,6 +109,10 @@ function StorePanel({
   onOpenKakao,
   onIssueReset,
   onMemo,
+  placementPhotoUri,
+  onPickPlacementPhoto,
+  onDeletePlacementPhoto,
+  onViewPlacementPhoto,
 }: {
   store: Store;
   onDelivered: (storeId: string, photos: string[]) => void;
@@ -116,6 +121,10 @@ function StorePanel({
   onOpenKakao: (storeId: string) => void;
   onIssueReset: (storeId: string) => void;
   onMemo: () => void;
+  placementPhotoUri: string | null;
+  onPickPlacementPhoto: (storeId: string) => void;
+  onDeletePlacementPhoto: (storeId: string) => void;
+  onViewPlacementPhoto: () => void;
 }) {
   const [pendingPhotos, setPendingPhotos] = useState<string[]>([]);
   const [showPickupWarn, setShowPickupWarn] = useState(false);
@@ -241,6 +250,35 @@ function StorePanel({
                   )}
                 </View>
               )}
+              {/* 상품 놓는 위치 */}
+              <View style={styles.placementRow}>
+                <View style={styles.placementLeft}>
+                  <Ionicons name="location-outline" size={14} color={colors.gray} />
+                  <Text style={styles.placementLabel}>상품 놓는 위치</Text>
+                </View>
+                <View style={styles.placementRight}>
+                  {placementPhotoUri ? (
+                    <>
+                      <Pressable style={styles.placementViewBtn} onPress={onViewPlacementPhoto}>
+                        <Ionicons name="image-outline" size={13} color={colors.white} />
+                        <Text style={styles.placementViewBtnText}>보기</Text>
+                      </Pressable>
+                      <Pressable style={styles.placementEditBtn} onPress={() => onPickPlacementPhoto(store.id)}>
+                        <Ionicons name="camera-outline" size={13} color={colors.gray} />
+                      </Pressable>
+                      <Pressable style={styles.placementEditBtn} onPress={() => onDeletePlacementPhoto(store.id)}>
+                        <Ionicons name="trash-outline" size={13} color={colors.red} />
+                      </Pressable>
+                    </>
+                  ) : (
+                    <Pressable style={styles.placementAddBtn} onPress={() => onPickPlacementPhoto(store.id)}>
+                      <Ionicons name="camera-outline" size={13} color={colors.gray} />
+                      <Text style={styles.placementAddBtnText}>사진 등록</Text>
+                    </Pressable>
+                  )}
+                </View>
+              </View>
+
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>배송 상품</Text>
                 <Text style={styles.sectionCount}>{store.items.length + (totalBags > 0 ? 1 : 0)}종</Text>
@@ -470,6 +508,51 @@ export default function SplitDeliveryScreen() {
   const { uncheckedCount } = useNotes();
   const [undoReason, setUndoReason] = useState('');
 
+  // ── 상품 놓는 위치 (임시: AsyncStorage 로컬 저장 / 추후 회사 클라우드로 교체 예정) ──
+  const [placementPhotoUri, setPlacementPhotoUri] = useState<string | null>(null);
+  const [showPlacementModal, setShowPlacementModal] = useState(false);
+
+  const placementKey = (id: string) => `placement_photo_${id}`;
+
+  const loadPlacementPhoto = useCallback(async (id: string) => {
+    try {
+      const uri = await AsyncStorage.getItem(placementKey(id));
+      setPlacementPhotoUri(uri);
+    } catch { setPlacementPhotoUri(null); }
+  }, []);
+
+  const savePlacementPhoto = useCallback(async (id: string, uri: string) => {
+    await AsyncStorage.setItem(placementKey(id), uri);
+    setPlacementPhotoUri(uri);
+  }, []);
+
+  const deletePlacementPhoto = useCallback(async (id: string) => {
+    await AsyncStorage.removeItem(placementKey(id));
+    setPlacementPhotoUri(null);
+  }, []);
+
+  const handlePickPlacementPhoto = useCallback(async (storeId: string) => {
+    Alert.alert('상품 놓는 위치 사진', '사진을 선택하세요', [
+      {
+        text: '카메라로 촬영',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') { Alert.alert('카메라 권한이 필요합니다'); return; }
+          const result = await ImagePicker.launchCameraAsync({ quality: 0.7, base64: false });
+          if (!result.canceled && result.assets[0]) await savePlacementPhoto(storeId, result.assets[0].uri);
+        },
+      },
+      {
+        text: '갤러리에서 선택',
+        onPress: async () => {
+          const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.7, base64: false, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+          if (!result.canceled && result.assets[0]) await savePlacementPhoto(storeId, result.assets[0].uri);
+        },
+      },
+      { text: '취소', style: 'cancel' },
+    ]);
+  }, [savePlacementPhoto]);
+
   const sortedStores = useMemo(
     () =>
       course.stores
@@ -564,6 +647,10 @@ export default function SplitDeliveryScreen() {
     () => sortedStores.find((s) => s.id === selectedId) ?? sortedStores[0],
     [sortedStores, selectedId],
   );
+
+  useEffect(() => {
+    if (selectedStore?.id) loadPlacementPhoto(selectedStore.id);
+  }, [selectedStore?.id, loadPlacementPhoto]);
 
   // 배송 완료 팝업
   const [showDonePopup, setShowDonePopup] = useState(false);
@@ -869,6 +956,13 @@ export default function SplitDeliveryScreen() {
           onOpenKakao={handleOpenKakao}
           onIssueReset={handleIssueReset}
           onMemo={() => setShowNotes(true)}
+          placementPhotoUri={placementPhotoUri}
+          onPickPlacementPhoto={handlePickPlacementPhoto}
+          onDeletePlacementPhoto={(id) => Alert.alert('사진 삭제', '저장된 위치 사진을 삭제할까요?', [
+            { text: '취소', style: 'cancel' },
+            { text: '삭제', style: 'destructive', onPress: () => deletePlacementPhoto(id) },
+          ])}
+          onViewPlacementPhoto={() => setShowPlacementModal(true)}
         />
       </View>
 
@@ -975,6 +1069,27 @@ export default function SplitDeliveryScreen() {
         );
       })()}
       <NotesModal visible={showNotes} onClose={() => setShowNotes(false)} />
+
+      {/* 상품 놓는 위치 사진 팝업 */}
+      <Modal visible={showPlacementModal} transparent animationType="fade" onRequestClose={() => setShowPlacementModal(false)}>
+        <Pressable style={styles.placementModalOverlay} onPress={() => setShowPlacementModal(false)}>
+          <View style={styles.placementModalBox}>
+            <View style={styles.placementModalHeader}>
+              <Text style={styles.placementModalTitle}>상품 놓는 위치</Text>
+              <Pressable onPress={() => setShowPlacementModal(false)} hitSlop={10}>
+                <Ionicons name="close" size={22} color={colors.black} />
+              </Pressable>
+            </View>
+            {placementPhotoUri && (
+              <Image
+                source={{ uri: placementPhotoUri }}
+                style={styles.placementModalImage}
+                resizeMode="contain"
+              />
+            )}
+          </View>
+        </Pressable>
+      </Modal>
 
       {/* 수동 매장 추가 모달 */}
       <Modal visible={showAddStore} animationType="slide" transparent onRequestClose={() => { setShowAddStore(false); resetAddForm(); }}>
@@ -1362,4 +1477,73 @@ const styles = StyleSheet.create({
     color: colors.gray,
     fontWeight: '500',
   },
+
+  placementRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: colors.paper100,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  placementLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  placementLabel: { fontSize: 13, color: colors.gray, fontWeight: '600' },
+  placementRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  placementViewBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.orange,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  placementViewBtnText: { fontSize: 12, fontWeight: '700', color: colors.white },
+  placementEditBtn: {
+    padding: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+  },
+  placementAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: colors.white,
+  },
+  placementAddBtnText: { fontSize: 12, color: colors.gray, fontWeight: '600' },
+
+  placementModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  placementModalBox: {
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    width: '100%',
+    maxWidth: 480,
+    overflow: 'hidden',
+  },
+  placementModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  placementModalTitle: { fontSize: 16, fontWeight: '700', color: colors.black },
+  placementModalImage: { width: '100%', height: 320 },
 });
