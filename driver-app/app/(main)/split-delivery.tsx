@@ -214,6 +214,33 @@ function StorePanel({
               <Text style={styles.callBtnText}>전화</Text>
             </Pressable>
           </View>
+          <View style={styles.infoDivider} />
+          {/* 상품 놓는 위치 */}
+          <View style={styles.infoRow}>
+            <Ionicons name="archive-outline" size={15} color={colors.orange} />
+            <Text style={[styles.infoText, { flex: 1, color: colors.black, fontWeight: '600' }]}>상품 놓는 위치</Text>
+            <View style={styles.placementRight}>
+              {placementPhotoUri ? (
+                <>
+                  <Pressable style={styles.placementViewBtn} onPress={onViewPlacementPhoto}>
+                    <Ionicons name="image-outline" size={13} color={colors.white} />
+                    <Text style={styles.placementViewBtnText}>보기</Text>
+                  </Pressable>
+                  <Pressable style={styles.placementEditBtn} onPress={() => onPickPlacementPhoto(store.id)}>
+                    <Ionicons name="camera-outline" size={13} color={colors.gray} />
+                  </Pressable>
+                  <Pressable style={styles.placementEditBtn} onPress={() => onDeletePlacementPhoto(store.id)}>
+                    <Ionicons name="trash-outline" size={13} color={colors.red} />
+                  </Pressable>
+                </>
+              ) : (
+                <Pressable style={styles.placementAddBtn} onPress={() => onPickPlacementPhoto(store.id)}>
+                  <Ionicons name="camera-outline" size={13} color={colors.gray} />
+                  <Text style={styles.placementAddBtnText}>사진 등록</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
         </View>
 
         {/* 배송 상품 목록 */}
@@ -250,35 +277,6 @@ function StorePanel({
                   )}
                 </View>
               )}
-              {/* 상품 놓는 위치 */}
-              <View style={styles.placementRow}>
-                <View style={styles.placementLeft}>
-                  <Ionicons name="location-outline" size={15} color={colors.orange} />
-                  <Text style={styles.placementLabel}>상품 놓는 위치</Text>
-                </View>
-                <View style={styles.placementRight}>
-                  {placementPhotoUri ? (
-                    <>
-                      <Pressable style={styles.placementViewBtn} onPress={onViewPlacementPhoto}>
-                        <Ionicons name="image-outline" size={13} color={colors.white} />
-                        <Text style={styles.placementViewBtnText}>보기</Text>
-                      </Pressable>
-                      <Pressable style={styles.placementEditBtn} onPress={() => onPickPlacementPhoto(store.id)}>
-                        <Ionicons name="camera-outline" size={13} color={colors.gray} />
-                      </Pressable>
-                      <Pressable style={styles.placementEditBtn} onPress={() => onDeletePlacementPhoto(store.id)}>
-                        <Ionicons name="trash-outline" size={13} color={colors.red} />
-                      </Pressable>
-                    </>
-                  ) : (
-                    <Pressable style={styles.placementAddBtn} onPress={() => onPickPlacementPhoto(store.id)}>
-                      <Ionicons name="camera-outline" size={13} color={colors.gray} />
-                      <Text style={styles.placementAddBtnText}>사진 등록</Text>
-                    </Pressable>
-                  )}
-                </View>
-              </View>
-
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>배송 상품</Text>
                 <Text style={styles.sectionCount}>{store.items.length + (totalBags > 0 ? 1 : 0)}종</Text>
@@ -1478,26 +1476,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  placementRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginHorizontal: 12,
-    marginBottom: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    backgroundColor: colors.white,
-    borderRadius: 10,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.orange,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
-  placementLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  placementLabel: { fontSize: 13, color: colors.black, fontWeight: '700' },
   placementRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   placementViewBtn: {
     flexDirection: 'row',
