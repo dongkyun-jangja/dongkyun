@@ -74,9 +74,6 @@ export type PickupReason =
   | '고객요청' | '매장요청' | '오배송' | '상품하자' | '매장변경'
   | '폐업' | '매장전달오류' | '미픽업' | '기타';
 
-export type PickupPlannedAction = '환불' | '재고반영' | '교환' | '기타';
-export type PickupFailKind = '매장에주류없음' | '중복오기입' | '매장부재' | '기타';
-
 interface DeliveryItem {
   code, name, quantity, boxUnit;
   bags?, itemNote?, isBlack?;
@@ -86,9 +83,6 @@ interface DeliveryItem {
 
 interface PickupItem {
   code, name, quantity, boxUnit;
-  reason?: PickupReason;
-  plannedAction?: PickupPlannedAction;
-  shippedDate?;      // 'YYYY-MM-DD'
   actualQuantity?;
 }
 
@@ -97,8 +91,7 @@ interface Store {
   items: DeliveryItem[];
   photoUris?, deliveredAt?, driverNote?;
   // 회수 관련
-  pickupItems?, pickupStatus?, collectedAt?;
-  pickupFailReason?, pickupFailKind?, pickupDriverNote?;
+  pickupItems?, pickupStatus?, collectedAt?, pickupDriverNote?;
 }
 ```
 
@@ -291,7 +284,7 @@ onPress={() => openKakaoChat()}
 ## 11. 코딩 규칙
 
 - **TypeScript strict** — `any` 지양. 새 enum 만들 때 types/index.ts에 일괄 정의
-- **자유 텍스트보다 enum 우선** — 신규 상태 필드 추가 시 enum 고려 (예: `PickupReason`, `PickupFailKind`)
+- **자유 텍스트보다 enum 우선** — 신규 상태 필드 추가 시 enum 고려
 - **AsyncStorage 키** — `@delivery_*`, `@hint_*` prefix 일관성
 - **한 손 사용 고려** — 핵심 액션 버튼 ≥60pt 높이. 보조 ≥44pt. hitSlop 적극 활용
 - **야외 가독성** — 핵심 텍스트 13pt 이상, 의미 있는 회색 텍스트는 `colors.black` 또는 weight 700+

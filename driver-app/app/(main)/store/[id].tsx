@@ -31,14 +31,7 @@ import { useDelivery } from '../../../src/context/DeliveryContext';
 import { useKakaoChat } from '../../../src/hooks/useKakaoChat';
 import { NotesModal } from '../../../src/components/NotesModal';
 import { useNotes } from '../../../src/hooks/useNotes';
-import { DeliveryItem, PickupFailKind, PickupItem } from '../../../src/types';
-
-const PICKUP_FAIL_KIND_OPTIONS: { kind: PickupFailKind; label: string; hint: string }[] = [
-  { kind: '매장에주류없음', label: '매장에 주류 없음', hint: '회수 대상 상품이 매장에 존재하지 않음' },
-  { kind: '매장부재', label: '매장 부재', hint: '점주/직원 부재로 회수 불가' },
-  { kind: '중복오기입', label: '중복/오기입', hint: '회수 요청 자체가 중복 또는 오기입' },
-  { kind: '기타', label: '기타', hint: '아래 사유를 직접 적어주세요' },
-];
+import { DeliveryItem, PickupItem } from '../../../src/types';
 
 // 상품 이미지 확대 모달
 // 상품 행 컴포넌트
@@ -147,18 +140,11 @@ export default function StoreDetailScreen() {
   const [issueCopied, setIssueCopied] = useState(false);
   // 이슈 초기화 모달
   const [showIssueResetModal, setShowIssueResetModal] = useState(false);
-  // 회수 미완료 오버레이
-  const [showPickupFailConfirm, setShowPickupFailConfirm] = useState(false);
-  const [pickupFailDraft, setPickupFailDraft] = useState('');
-  const [pickupFailKindDraft, setPickupFailKindDraft] = useState<PickupFailKind>('매장에주류없음');
   // 회수 기사 메모 편집
   const [pickupNoteEditing, setPickupNoteEditing] = useState(false);
   const [pickupNoteDraft, setPickupNoteDraft] = useState('');
   // 배송 완료 취소 팝업
   const [showCancelDelivery, setShowCancelDelivery] = useState(false);
-  // 회수 완료/미완료 취소 popup
-  const [showPickupUndo, setShowPickupUndo] = useState(false);
-  const [pickupUndoReason, setPickupUndoReason] = useState('');
   // 쇼핑백 확인 체크박스 (previewCard 인라인)
   // 완료 토스트
   const [remainingCount, setRemainingCount] = useState(0);
@@ -166,7 +152,6 @@ export default function StoreDetailScreen() {
   const [nextStoreName, setNextStoreName] = useState<string | null>(null);
   const [completedOrder, setCompletedOrder] = useState(0); // 방금 완료한 매장의 1-based index
   const [toastVisible, setToastVisible] = useState(false);
-  const [toastKind, setToastKind] = useState<'delivered' | 'pickup-collected' | 'pickup-issue'>('delivered');
   const toastAnim = useRef(new Animated.Value(0)).current;
 
   const store = useMemo(
@@ -225,7 +210,7 @@ export default function StoreDetailScreen() {
   // 2단계: 배송 완료 확정
   // 공통 — 완료 토스트 + 다음 매장 자동 이동
   const triggerNextStore = useCallback(
-    (kind: 'delivered' | 'pickup-collected' | 'pickup-issue') => {
+    (kind: 'delivered') => {
       if (!store) return;
       const pendingAfter = course.stores
         .filter((s) => s.status === 'pending' && s.id !== store.id)
@@ -238,7 +223,6 @@ export default function StoreDetailScreen() {
       setNextStoreId(nextPending?.id ?? null);
       setNextStoreName(nextPending?.name ?? null);
       setCompletedOrder(doneCount);
-      setToastKind(kind);
       setToastVisible(true);
 
       const navigate = () => {
@@ -285,23 +269,6 @@ export default function StoreDetailScreen() {
     }
     doConfirmDelivery();
   }, [store, pendingPhotos, pickupReady, doConfirmDelivery]);
-
-  // 회수 전용 매장에서 회수 완료 시 호출 (triggerNextStore는 store.id를 제외하고 계산하므로 안전)
-  const handlePickupOnlyCollected = useCallback(() => {
-    if (!store) return;
-    updatePickupStatus(store.id, 'collected');
-    triggerNextStore('pickup-collected');
-  }, [store, updatePickupStatus, triggerNextStore]);
-
-  // 회수 전용 매장에서 회수 미완료 처리 시 호출
-  const handlePickupOnlyIssue = useCallback(
-    (failReason: string | undefined, failKind: PickupFailKind) => {
-      if (!store) return;
-      updatePickupStatus(store.id, 'issue', failReason, failKind);
-      triggerNextStore('pickup-issue');
-    },
-    [store, updatePickupStatus, triggerNextStore],
-  );
 
   // 완료 상태에서 추가 사진 촬영
   const handleAddPhoto = useCallback(async () => {
@@ -612,38 +579,6 @@ export default function StoreDetailScreen() {
               </View>
               <View style={styles.sectionMeta}>
                 <Text style={[styles.sectionCount, { color: colors.blue }]}>{store.pickupItems.length}종</Text>
-                {store.pickupStatus === 'collected' && (
-                  <View style={styles.pickupBadgeRow}>
-                    <View style={styles.pickupDoneBadge}>
-                      <Ionicons name="checkmark" size={11} color={colors.blue} />
-                      <Text style={styles.pickupDoneText}>회수 완료 {collectedTime}</Text>
-                    </View>
-                    <Pressable
-                      style={({ pressed }) => [styles.pickupUndoTinyBtn, pressed && { opacity: 0.6 }]}
-                      onPress={() => { setPickupUndoReason(''); setShowPickupUndo(true); }}
-                      hitSlop={6}
-                    >
-                      <Ionicons name="arrow-undo-outline" size={11} color={colors.gray} />
-                      <Text style={styles.pickupUndoTinyText}>취소</Text>
-                    </Pressable>
-                  </View>
-                )}
-                {store.pickupStatus === 'issue' && (
-                  <View style={styles.pickupBadgeRow}>
-                    <View style={[styles.pickupDoneBadge, styles.pickupIssueBadge]}>
-                      <Ionicons name="alert-circle" size={11} color={colors.red} />
-                      <Text style={styles.pickupIssueText}>회수 미완료</Text>
-                    </View>
-                    <Pressable
-                      style={({ pressed }) => [styles.pickupUndoTinyBtn, pressed && { opacity: 0.6 }]}
-                      onPress={() => { setPickupUndoReason(''); setShowPickupUndo(true); }}
-                      hitSlop={6}
-                    >
-                      <Ionicons name="arrow-undo-outline" size={11} color={colors.gray} />
-                      <Text style={styles.pickupUndoTinyText}>취소</Text>
-                    </Pressable>
-                  </View>
-                )}
               </View>
             </View>
             <View style={[styles.card, styles.pickupCard]}>
@@ -657,20 +592,6 @@ export default function StoreDetailScreen() {
                   />
                 );
               })}
-              {store.pickupStatus === 'issue' && (() => {
-                const kindLabel = store.pickupFailKind
-                  ? PICKUP_FAIL_KIND_OPTIONS.find((o) => o.kind === store.pickupFailKind)?.label
-                  : null;
-                return (
-                  <View style={styles.pickupFailReasonBanner}>
-                    <Ionicons name="alert-circle-outline" size={13} color={colors.red} />
-                    <Text style={styles.pickupFailReasonText}>
-                      미완료: {kindLabel ?? '사유 없음'}
-                      {store.pickupFailReason ? ` — ${store.pickupFailReason}` : ''}
-                    </Text>
-                  </View>
-                );
-              })()}
             </View>
 
             {/* 기사 회수 메모 (시트 "신동주류 비고") */}
@@ -1038,111 +959,27 @@ export default function StoreDetailScreen() {
         {/* 사진 촬영 전 */}
         {isPending && !hasPendingPhotos && (
           <>
-            {/* 배송 상품이 있으면 사진 촬영 필요, 없으면(회수 전용) 회수 완료 버튼만 */}
-            {store.items.length > 0 ? (
-              <>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.primaryButton,
-                    pressed && styles.primaryButtonPressed,
-                  ]}
-                  onPress={handleTakePhoto}
-                >
-                  <Ionicons name="camera" size={22} color={colors.white} />
-                  <Text style={styles.primaryButtonText}>사진 촬영하기</Text>
+            <Pressable
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  pressed && styles.primaryButtonPressed,
+                ]}
+                onPress={handleTakePhoto}
+              >
+                <Ionicons name="camera" size={22} color={colors.white} />
+                <Text style={styles.primaryButtonText}>사진 촬영하기</Text>
+              </Pressable>
+              <View style={styles.secondaryButtonRow}>
+                <Pressable style={styles.memoButton} onPress={() => setShowNotes(true)}>
+                  <Ionicons name="create-outline" size={15} color="#5A4500" />
+                  <Text style={styles.memoButtonText}>메모</Text>
+                  {uncheckedCount > 0 && <View style={styles.memoDot} />}
                 </Pressable>
-                <View style={styles.secondaryButtonRow}>
-                  <Pressable style={styles.memoButton} onPress={() => setShowNotes(true)}>
-                    <Ionicons name="create-outline" size={15} color="#5A4500" />
-                    <Text style={styles.memoButtonText}>메모</Text>
-                    {uncheckedCount > 0 && <View style={styles.memoDot} />}
-                  </Pressable>
-                  <Pressable style={styles.issueButton} onPress={handleReportIssue}>
-                    <Ionicons name="alert-circle-outline" size={16} color={colors.red} />
-                    <Text style={styles.issueButtonText}>이슈 신고</Text>
-                  </Pressable>
-                </View>
-              </>
-            ) : (
-              /* 회수 전용 매장 — 사진 없이 회수 완료 처리 */
-              <View style={styles.pickupActionGroup}>
-                {store.pickupStatus === 'collected' ? (
-                  <View style={styles.pickupDoneButton}>
-                    <Ionicons name="checkmark-circle" size={20} color={colors.blue} />
-                    <Text style={styles.pickupDoneButtonText}>회수 완료됨 ({collectedTime})</Text>
-                  </View>
-                ) : store.pickupStatus === 'issue' ? (
-                  <View style={[styles.pickupDoneButton, styles.pickupIssueButton]}>
-                    <Ionicons name="alert-circle" size={20} color={colors.red} />
-                    <Text style={[styles.pickupDoneButtonText, { color: colors.red }]}>
-                      회수 미완료{store.pickupFailReason ? ` — ${store.pickupFailReason}` : ''}
-                    </Text>
-                  </View>
-                ) : (
-                  <>
-                    <Pressable
-                      style={({ pressed }) => [styles.pickupCollectButton, pressed && { opacity: 0.85 }]}
-                      onPress={handlePickupOnlyCollected}
-                    >
-                      <Ionicons name="arrow-undo" size={20} color={colors.white} />
-                      <Text style={styles.primaryButtonText}>회수 완료</Text>
-                    </Pressable>
-                    <Pressable
-                      style={({ pressed }) => [styles.pickupFailButton, pressed && { opacity: 0.85 }]}
-                      onPress={() => { setPickupFailDraft(''); setPickupFailKindDraft('매장에주류없음'); setShowPickupFailConfirm(true); }}
-                    >
-                      <Ionicons name="close-circle-outline" size={18} color={colors.red} />
-                      <Text style={styles.pickupFailButtonText}>회수 미완료</Text>
-                    </Pressable>
-                  </>
-                )}
+                <Pressable style={styles.issueButton} onPress={handleReportIssue}>
+                  <Ionicons name="alert-circle-outline" size={16} color={colors.red} />
+                  <Text style={styles.issueButtonText}>이슈 신고</Text>
+                </Pressable>
               </View>
-            )}
-            {/* 회수 상품이 있는 경우 배송 완료 버튼 아래 회수 버튼 */}
-            {store.items.length > 0 && store.pickupItems && store.pickupItems.length > 0 && (
-              store.pickupStatus === 'collected' ? (
-                <Pressable
-                  style={({ pressed }) => [styles.pickupDoneChip, pressed && { opacity: 0.7 }]}
-                  onPress={() => { setPickupUndoReason(''); setShowPickupUndo(true); }}
-                >
-                  <Ionicons name="checkmark-circle" size={14} color={colors.blue} />
-                  <Text style={styles.pickupDoneChipText}>회수 완료 {collectedTime}</Text>
-                  <View style={styles.pickupChipUndoBtn}>
-                    <Ionicons name="arrow-undo-outline" size={11} color={colors.gray} />
-                    <Text style={styles.pickupChipUndoText}>취소</Text>
-                  </View>
-                </Pressable>
-              ) : store.pickupStatus === 'issue' ? (
-                <Pressable
-                  style={({ pressed }) => [styles.pickupDoneChip, styles.pickupIssueChip, pressed && { opacity: 0.7 }]}
-                  onPress={() => { setPickupUndoReason(''); setShowPickupUndo(true); }}
-                >
-                  <Ionicons name="alert-circle" size={14} color={colors.red} />
-                  <Text style={[styles.pickupDoneChipText, { color: colors.red }]}>회수 미완료</Text>
-                  <View style={styles.pickupChipUndoBtn}>
-                    <Ionicons name="arrow-undo-outline" size={11} color={colors.gray} />
-                    <Text style={styles.pickupChipUndoText}>취소</Text>
-                  </View>
-                </Pressable>
-              ) : (
-                <View style={styles.pickupSmallRow}>
-                  <Pressable
-                    style={({ pressed }) => [styles.pickupCollectButtonSmall, { flex: 1 }, pressed && { opacity: 0.85 }]}
-                    onPress={() => updatePickupStatus(store.id, 'collected')}
-                  >
-                    <Ionicons name="arrow-undo" size={15} color={colors.blue} />
-                    <Text style={styles.pickupCollectButtonSmallText}>회수 완료</Text>
-                  </Pressable>
-                  <Pressable
-                    style={({ pressed }) => [styles.pickupFailButtonSmall, { flex: 1 }, pressed && { opacity: 0.85 }]}
-                    onPress={() => { setPickupFailDraft(''); setPickupFailKindDraft('매장에주류없음'); setShowPickupFailConfirm(true); }}
-                  >
-                    <Ionicons name="close-circle-outline" size={15} color={colors.red} />
-                    <Text style={styles.pickupFailButtonSmallText}>회수 미완료</Text>
-                  </Pressable>
-                </View>
-              )
-            )}
           </>
         )}
 
@@ -1159,51 +996,6 @@ export default function StoreDetailScreen() {
               <Ionicons name="checkmark-circle" size={22} color={colors.white} />
               <Text style={styles.primaryButtonText}>배송 완료 확정</Text>
             </Pressable>
-            {/* 배송+회수 동시 매장: 회수 완료 처리 */}
-            {store.pickupItems && store.pickupItems.length > 0 && (
-              store.pickupStatus === 'collected' ? (
-                <Pressable
-                  style={({ pressed }) => [styles.pickupDoneChip, pressed && { opacity: 0.7 }]}
-                  onPress={() => { setPickupUndoReason(''); setShowPickupUndo(true); }}
-                >
-                  <Ionicons name="checkmark-circle" size={14} color={colors.blue} />
-                  <Text style={styles.pickupDoneChipText}>회수 완료 {collectedTime}</Text>
-                  <View style={styles.pickupChipUndoBtn}>
-                    <Ionicons name="arrow-undo-outline" size={11} color={colors.gray} />
-                    <Text style={styles.pickupChipUndoText}>취소</Text>
-                  </View>
-                </Pressable>
-              ) : store.pickupStatus === 'issue' ? (
-                <Pressable
-                  style={({ pressed }) => [styles.pickupDoneChip, styles.pickupIssueChip, pressed && { opacity: 0.7 }]}
-                  onPress={() => { setPickupUndoReason(''); setShowPickupUndo(true); }}
-                >
-                  <Ionicons name="alert-circle" size={14} color={colors.red} />
-                  <Text style={[styles.pickupDoneChipText, { color: colors.red }]}>회수 미완료</Text>
-                  <View style={styles.pickupChipUndoBtn}>
-                    <Ionicons name="arrow-undo-outline" size={11} color={colors.gray} />
-                    <Text style={styles.pickupChipUndoText}>취소</Text>
-                  </View>
-                </Pressable>
-              ) : (
-                <View style={styles.pickupSmallRow}>
-                  <Pressable
-                    style={({ pressed }) => [styles.pickupCollectButtonSmall, { flex: 1 }, pressed && { opacity: 0.85 }]}
-                    onPress={() => updatePickupStatus(store.id, 'collected')}
-                  >
-                    <Ionicons name="arrow-undo" size={15} color={colors.blue} />
-                    <Text style={styles.pickupCollectButtonSmallText}>회수 완료</Text>
-                  </Pressable>
-                  <Pressable
-                    style={({ pressed }) => [styles.pickupFailButtonSmall, { flex: 1 }, pressed && { opacity: 0.85 }]}
-                    onPress={() => { setPickupFailDraft(''); setPickupFailKindDraft('매장에주류없음'); setShowPickupFailConfirm(true); }}
-                  >
-                    <Ionicons name="close-circle-outline" size={15} color={colors.red} />
-                    <Text style={styles.pickupFailButtonSmallText}>회수 미완료</Text>
-                  </Pressable>
-                </View>
-              )
-            )}
             <View style={styles.secondaryRow}>
               <Pressable
                 style={({ pressed }) => [styles.retakeButton, pressed && { opacity: 0.7 }]}
@@ -1321,221 +1113,6 @@ export default function StoreDetailScreen() {
               >
                 <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.white} />
                 <Text style={styles.issueModalConfirmText}>신고 및 채팅방 열기</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      )}
-
-      {/* 회수 완료/미완료 취소 popup — 배송 완료 취소 스타일 */}
-      {showPickupUndo && (() => {
-        const isCollected = store.pickupStatus === 'collected';
-        const isIssue = store.pickupStatus === 'issue';
-        const pickupItems = store.pickupItems ?? [];
-        const totalPickupQty = pickupItems.reduce((s, p) => s + (p.actualQuantity ?? p.quantity), 0);
-        const canConfirm = pickupUndoReason.trim().length > 0;
-        const previewCount = 2;
-        const moreCount = Math.max(0, pickupItems.length - previewCount);
-        const kindLabel = store.pickupFailKind
-          ? PICKUP_FAIL_KIND_OPTIONS.find((o) => o.kind === store.pickupFailKind)?.label
-          : null;
-        return (
-          <View style={styles.issueOverlay}>
-            <View style={styles.popupCard}>
-              {/* 헤더 */}
-              <View style={styles.undoPopupHeader}>
-                <View style={[styles.undoPopupIconWrap, { backgroundColor: '#EEF0FF' }]}>
-                  <Ionicons name="arrow-undo-circle-outline" size={28} color={colors.blue} />
-                </View>
-                <View style={styles.undoPopupHeaderText}>
-                  <Text style={styles.undoPopupTitle}>
-                    {isCollected ? '회수 완료 취소' : '회수 미완료 취소'}
-                  </Text>
-                  <Text style={styles.undoPopupStoreName} numberOfLines={1}>{store.name}</Text>
-                </View>
-              </View>
-
-              {/* 회수 상품 요약 */}
-              <View style={styles.undoSummaryBox}>
-                <View style={styles.undoSummaryRow}>
-                  <Ionicons name={isCollected ? 'time-outline' : 'alert-circle-outline'} size={14} color={colors.gray} />
-                  <Text style={styles.undoSummaryLabel}>
-                    {isCollected ? '완료 시각' : '미완료 사유'}
-                  </Text>
-                  <Text style={styles.undoSummaryValue} numberOfLines={1}>
-                    {isCollected
-                      ? (collectedTime || '—')
-                      : (kindLabel ?? store.pickupFailReason ?? '—')}
-                  </Text>
-                </View>
-                <View style={styles.undoSummaryDivider} />
-                <View style={styles.undoSummaryRow}>
-                  <Ionicons name="arrow-undo" size={14} color={colors.blue} />
-                  <Text style={styles.undoSummaryLabel}>회수 상품</Text>
-                  <Text style={styles.undoSummaryValue}>
-                    {pickupItems.length}종 · 총 {totalPickupQty}개
-                  </Text>
-                </View>
-                <View style={styles.undoSummaryDivider} />
-                {pickupItems.slice(0, previewCount).map((p, i) => {
-                  const qty = p.actualQuantity ?? p.quantity;
-                  const boxes = p.boxUnit > 0 ? Math.floor(qty / p.boxUnit) : 0;
-                  return (
-                    <Text key={i} style={styles.undoSummaryItem} numberOfLines={1}>
-                      · {p.name} {boxes}박스 ({qty}개)
-                    </Text>
-                  );
-                })}
-                {moreCount > 0 && (
-                  <Text style={styles.undoSummaryMore}>외 {moreCount}종 더 보기</Text>
-                )}
-              </View>
-
-              {/* 취소 사유 입력 */}
-              <View style={styles.undoReasonWrap}>
-                <Text style={styles.undoReasonLabel}>
-                  취소 사유 <Text style={{ color: colors.red }}>*</Text>
-                </Text>
-                <TextInput
-                  style={styles.undoReasonInput}
-                  value={pickupUndoReason}
-                  onChangeText={setPickupUndoReason}
-                  placeholder={isCollected
-                    ? '회수 완료를 취소하는 사유를 입력해 주세요'
-                    : '회수 미완료를 취소하는 사유를 입력해 주세요'}
-                  placeholderTextColor={colors.gray}
-                  multiline
-                  maxLength={100}
-                  autoFocus
-                  textAlignVertical="top"
-                />
-                <Text style={styles.undoReasonCount}>{pickupUndoReason.length}/100</Text>
-              </View>
-
-              {/* 버튼 */}
-              <View style={styles.undoPopupBtns}>
-                <Pressable
-                  style={({ pressed }) => [styles.undoPopupCancelBtn, pressed && { opacity: 0.75 }]}
-                  onPress={() => { setShowPickupUndo(false); setPickupUndoReason(''); }}
-                >
-                  <Text style={styles.undoPopupCancelText}>아니오</Text>
-                </Pressable>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.undoPopupConfirmBtn,
-                    !canConfirm && styles.undoPopupConfirmBtnDisabled,
-                    pressed && canConfirm && { opacity: 0.75 },
-                  ]}
-                  disabled={!canConfirm}
-                  onPress={() => {
-                    if (!canConfirm) return;
-                    // pending으로 되돌리기 — 회수 메모 끝에 취소 사유 부착(선택적)
-                    const newNote = [
-                      store.pickupDriverNote,
-                      `[${isCollected ? '완료' : '미완료'} 취소] ${pickupUndoReason.trim()}`,
-                    ].filter(Boolean).join('\n');
-                    updatePickupStatus(store.id, 'pending');
-                    updatePickupDriverNote(store.id, newNote);
-                    setShowPickupUndo(false);
-                    setPickupUndoReason('');
-                  }}
-                >
-                  <Text style={[
-                    styles.undoPopupConfirmText,
-                    !canConfirm && { color: 'rgba(255,255,255,0.5)' },
-                  ]}>
-                    {isCollected ? '완료 취소' : '미완료 취소'}
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        );
-      })()}
-
-      {/* 회수 미완료 오버레이 */}
-      {showPickupFailConfirm && (
-        <View style={styles.issueOverlay}>
-          <View style={styles.issueModal}>
-            <View style={[styles.issueModalIcon, { backgroundColor: colors.red50 }]}>
-              <Ionicons name="alert-circle" size={32} color={colors.red} />
-            </View>
-            <Text style={styles.issueModalTitle}>회수 미완료</Text>
-            <Text style={styles.issueModalMsg}>
-              {store.name}{'\n'}
-              {store.pickupItems?.length}종 상품 회수를 완료하지 못한 사유를 선택하세요.
-            </Text>
-
-            {/* enum 선택 */}
-            <View style={styles.failKindGrid}>
-              {PICKUP_FAIL_KIND_OPTIONS.map((opt) => {
-                const selected = pickupFailKindDraft === opt.kind;
-                return (
-                  <Pressable
-                    key={opt.kind}
-                    style={({ pressed }) => [
-                      styles.failKindChip,
-                      selected && styles.failKindChipActive,
-                      pressed && { opacity: 0.85 },
-                    ]}
-                    onPress={() => setPickupFailKindDraft(opt.kind)}
-                  >
-                    <View style={[styles.failKindRadio, selected && styles.failKindRadioActive]}>
-                      {selected && <View style={styles.failKindRadioDot} />}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.failKindLabel, selected && { color: colors.red }]}>{opt.label}</Text>
-                      <Text style={styles.failKindHint}>{opt.hint}</Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            {/* 메모 (필수: 기타 / 선택: 그 외) */}
-            <TextInput
-              style={styles.pickupFailInput}
-              value={pickupFailDraft}
-              onChangeText={setPickupFailDraft}
-              placeholder={
-                pickupFailKindDraft === '기타'
-                  ? '사유 직접 입력 (필수)'
-                  : '추가 메모 (선택)'
-              }
-              placeholderTextColor={colors.gray}
-              multiline
-              maxLength={100}
-              textAlignVertical="top"
-            />
-            <View style={styles.issueModalBtns}>
-              <Pressable
-                style={({ pressed }) => [styles.issueModalCancel, pressed && { opacity: 0.7 }]}
-                onPress={() => setShowPickupFailConfirm(false)}
-              >
-                <Text style={styles.issueModalCancelText}>아니오</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.issueModalConfirm,
-                  { backgroundColor: colors.red },
-                  // 기타인데 메모 비었으면 비활성
-                  pickupFailKindDraft === '기타' && pickupFailDraft.trim().length === 0 && styles.issueModalConfirmDisabled,
-                  pressed && { opacity: 0.88 },
-                ]}
-                disabled={pickupFailKindDraft === '기타' && pickupFailDraft.trim().length === 0}
-                onPress={() => {
-                  const reason = pickupFailDraft.trim() || undefined;
-                  setShowPickupFailConfirm(false);
-                  // 회수 전용 매장은 미완료 처리 = 매장 완료 = 다음 매장 이동
-                  if (store.items.length === 0) {
-                    handlePickupOnlyIssue(reason, pickupFailKindDraft);
-                  } else {
-                    updatePickupStatus(store.id, 'issue', reason, pickupFailKindDraft);
-                  }
-                }}
-              >
-                <Ionicons name="alert-circle-outline" size={16} color={colors.white} />
-                <Text style={styles.issueModalConfirmText}>미완료 처리</Text>
               </Pressable>
             </View>
           </View>
@@ -2945,149 +2522,6 @@ const styles = StyleSheet.create({
     color: colors.blue,
   },
 
-  // 회수 미완료
-  pickupIssueBadge: {
-    backgroundColor: colors.red50,
-    borderWidth: 1,
-    borderColor: colors.red,
-  },
-  pickupIssueText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.red,
-  },
-  pickupIssueButton: {
-    backgroundColor: colors.red50,
-    borderWidth: 1.5,
-    borderColor: colors.red,
-  },
-  pickupIssueChip: {
-    backgroundColor: colors.red50,
-    borderWidth: 1,
-    borderColor: colors.red,
-  },
-  pickupFailButton: {
-    height: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: colors.red50,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: colors.red,
-  },
-  pickupFailButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.red,
-  },
-  pickupSmallRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  pickupFailButtonSmall: {
-    height: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    backgroundColor: colors.red50,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: colors.red,
-  },
-  pickupFailButtonSmallText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.red,
-  },
-  pickupFailReasonBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-    backgroundColor: colors.red50,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginHorizontal: 4,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: colors.red,
-  },
-  pickupFailReasonText: {
-    flex: 1,
-    fontSize: 12,
-    color: colors.red,
-    fontWeight: '500',
-    lineHeight: 17,
-  },
-  pickupFailInput: {
-    alignSelf: 'stretch',
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 14,
-    color: colors.black,
-    minHeight: 64,
-    backgroundColor: colors.paper50,
-    lineHeight: 20,
-  },
-
-  // 회수 미완료 사유 선택 (enum)
-  failKindGrid: {
-    alignSelf: 'stretch',
-    gap: 8,
-  },
-  failKindChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    backgroundColor: colors.paper50,
-    minHeight: 56,
-  },
-  failKindChipActive: {
-    borderColor: colors.red,
-    backgroundColor: colors.red50,
-  },
-  failKindRadio: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  failKindRadioActive: {
-    borderColor: colors.red,
-  },
-  failKindRadioDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.red,
-  },
-  failKindLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.black,
-  },
-  failKindHint: {
-    fontSize: 12,
-    color: colors.gray,
-    marginTop: 2,
-    fontWeight: '500',
-  },
-  issueModalConfirmDisabled: {
-    opacity: 0.4,
-  },
 
   // 회수 상품 메타 칩 (사유/예정조치/출고일)
   pickupMetaRow: {

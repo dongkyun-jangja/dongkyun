@@ -554,15 +554,7 @@ export default function DashboardScreen() {
               </View>
               {issueStores.map((s, i) => {
                 const isPickupOnly = s.items.length === 0;
-                const kindLabel = s.pickupFailKind && {
-                  '매장에주류없음': '매장에 주류 없음',
-                  '매장부재': '매장 부재',
-                  '중복오기입': '중복/오기입',
-                  '기타': '기타',
-                }[s.pickupFailKind];
-                const sub = isPickupOnly
-                  ? `회수 미완료${kindLabel ? ` · ${kindLabel}` : ''}`
-                  : '배송 이슈';
+                const sub = isPickupOnly ? '회수 미완료' : '배송 이슈';
                 return (
                   <Pressable
                     key={s.id}

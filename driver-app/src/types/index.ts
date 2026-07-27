@@ -1,9 +1,6 @@
 export type DeliveryStatus = 'pending' | 'delivered' | 'issue';
 export type PickupStatus = 'pending' | 'collected' | 'issue';
 
-// 회수 미완료 분류 — 기사가 현장에서 선택. 시트 "회수(신동)" 컬럼 값 매핑
-export type PickupFailKind = '매장에주류없음' | '중복오기입' | '매장부재' | '기타';
-
 export interface DeliveryItem {
   code: string;
   name: string;
@@ -44,8 +41,6 @@ export interface Store {
   pickupItems?: PickupItem[];   // 회수 상품 목록 (없으면 회수 없음)
   pickupStatus?: PickupStatus;  // 회수 상태
   collectedAt?: string;         // 회수 완료 시각 'YYYY-MM-DD HH:MM' (구버전은 'HH:MM')
-  pickupFailReason?: string;    // 회수 미완료 보조 메모 (자유 텍스트)
-  pickupFailKind?: PickupFailKind; // 회수 미완료 분류 (enum)
   pickupDriverNote?: string;    // 회수 관련 기사 비고 (시트 "신동주류 비고")
 }
 

@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { mockAllCourses } from '../data/mock';
-import { Course, DeliveryStatus, PickupFailKind, PickupStatus } from '../types';
+import { Course, DeliveryStatus, PickupStatus } from '../types';
 
 // 오늘 날짜 기준 키 — 날짜가 바뀌면 이전 데이터는 무시됨
 const todayCourse = mockAllCourses[mockAllCourses.length - 1];
@@ -29,12 +29,7 @@ interface DeliveryContextType {
   moveStoreTo: (storeId: string, targetOrder: number) => void;
   updateItemQuantity: (storeId: string, itemCode: string, actualQty: number | null) => void;
   updateItemBags: (storeId: string, itemCode: string, actualBags: number | null) => void;
-  updatePickupStatus: (
-    storeId: string,
-    status: PickupStatus,
-    failReason?: string,
-    failKind?: PickupFailKind,
-  ) => void;
+  updatePickupStatus: (storeId: string, status: PickupStatus) => void;
   updatePickupItemQuantity: (storeId: string, itemCode: string, actualQty: number | null) => void;
   updatePickupDriverNote: (storeId: string, note: string) => void;
   resetIssueStore: (storeId: string) => void;  // 이슈 → 대기(다시 배송)
@@ -285,12 +280,7 @@ export function DeliveryProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updatePickupStatus = useCallback(
-    (
-      storeId: string,
-      status: PickupStatus,
-      failReason?: string,
-      failKind?: PickupFailKind,
-    ) => {
+    (storeId: string, status: PickupStatus) => {
       setCourses((prev) =>
         prev.map((c, idx) => {
           if (idx !== dateIndex) return c;
@@ -312,8 +302,6 @@ export function DeliveryProvider({ children }: { children: React.ReactNode }) {
                 ...s,
                 status: syncedStatus,
                 pickupStatus: status,
-                pickupFailReason: status === 'issue' ? (failReason ?? undefined) : undefined,
-                pickupFailKind: status === 'issue' ? (failKind ?? undefined) : undefined,
                 collectedAt:
                   status === 'collected'
                     ? s.collectedAt ?? nowDateTime()
