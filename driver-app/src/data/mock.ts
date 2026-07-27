@@ -378,8 +378,8 @@ export const mockCourse: Course = {
         { code: '40101', name: '생막걸리 (750ml)', quantity: 24, boxUnit: 12, isColdChain: true, itemNote: '냉장 보관 필수' },
       ],
       pickupItems: [
-        { code: '20059', name: '바크스 룸 세이카스코 (750ml)', quantity: 6, boxUnit: 6, reason: '상품하자', plannedAction: '환불', shippedDate: '2026-04-22' },
-        { code: '30701', name: '오스카 로디스 (750ml)', quantity: 2, boxUnit: 12, reason: '오배송', plannedAction: '재고반영', shippedDate: '2026-05-02' },
+        { code: '20059', name: '바크스 룸 세이카스코 (750ml)', quantity: 6, boxUnit: 6 },
+        { code: '30701', name: '오스카 로디스 (750ml)', quantity: 2, boxUnit: 12 },
       ],
       pickupStatus: 'pending',
     },
@@ -434,7 +434,7 @@ export const mockCourse: Course = {
       order: 7,
       items: [], // 배송 없음 — 회수 전용
       pickupItems: [
-        { code: '31199', name: '살타레 분 루제 (750ml)', quantity: 12, boxUnit: 6, reason: '고객요청', plannedAction: '환불', shippedDate: '2026-05-05' },
+        { code: '31199', name: '살타레 분 루제 (750ml)', quantity: 12, boxUnit: 6 },
       ],
       pickupStatus: 'pending',
     },

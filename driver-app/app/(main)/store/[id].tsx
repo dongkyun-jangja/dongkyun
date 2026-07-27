@@ -120,27 +120,6 @@ const PickupItemRow = React.memo(function PickupItemRow({
       <View style={styles.itemLeft}>
         <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
         <Text style={styles.itemCode}>#{item.code}</Text>
-        {/* 사유 / 예정조치 / 출고일 칩 — 본사 입력값, 기사는 읽기 전용 */}
-        {(item.reason || item.plannedAction || item.shippedDate) && (
-          <View style={styles.pickupMetaRow}>
-            {item.reason && (
-              <View style={[styles.pickupMetaChip, styles.pickupMetaChipReason]}>
-                <Text style={styles.pickupMetaChipText}>사유 · {item.reason}</Text>
-              </View>
-            )}
-            {item.plannedAction && (
-              <View style={[styles.pickupMetaChip, styles.pickupMetaChipAction]}>
-                <Text style={styles.pickupMetaChipText}>예정 · {item.plannedAction}</Text>
-              </View>
-            )}
-            {item.shippedDate && (
-              <View style={[styles.pickupMetaChip, styles.pickupMetaChipDate]}>
-                <Ionicons name="cube-outline" size={10} color={colors.gray} />
-                <Text style={styles.pickupMetaChipDateText}>출고 {item.shippedDate.slice(5)}</Text>
-              </View>
-            )}
-          </View>
-        )}
 
       </View>
 
