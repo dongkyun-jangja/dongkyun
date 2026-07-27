@@ -395,13 +395,6 @@ export default function StoreDetailScreen() {
   const isDelivered = store.status === 'delivered';
   const isIssue = store.status === 'issue';
 
-  // collectedAt이 'YYYY-MM-DD HH:MM' 또는 'HH:MM' 모두 대응
-  const formatCollectedAt = (raw?: string) => {
-    if (!raw) return '';
-    const parts = raw.trim().split(/\s+/);
-    return parts.length === 2 ? parts[1] : raw;
-  };
-  const collectedTime = formatCollectedAt(store.collectedAt);
   // 회수 전용 매장(배송 상품 없음)은 사진 플로우 자체가 없으므로 hasPendingPhotos 항상 false
   const hasPendingPhotos = pendingPhotos.length > 0 && store.items.length > 0;
 
