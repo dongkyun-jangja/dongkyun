@@ -42,6 +42,7 @@ export interface Store {
   pickupStatus?: PickupStatus;  // 회수 상태
   collectedAt?: string;         // 회수 완료 시각 'YYYY-MM-DD HH:MM' (구버전은 'HH:MM')
   pickupDriverNote?: string;    // 회수 관련 기사 비고 (시트 "신동주류 비고")
+  redeliveryStoreName?: string; // 이배송 매장명 (원래 매장 대신 실제 배송한 매장)
 }
 
 export interface Driver {

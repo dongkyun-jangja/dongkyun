@@ -32,6 +32,7 @@ interface DeliveryContextType {
   updatePickupStatus: (storeId: string, status: PickupStatus) => void;
   updatePickupItemQuantity: (storeId: string, itemCode: string, actualQty: number | null) => void;
   updatePickupDriverNote: (storeId: string, note: string) => void;
+  updateRedeliveryStore: (storeId: string, name: string | undefined) => void;
   resetIssueStore: (storeId: string) => void;  // 이슈 → 대기(다시 배송)
   cancelStore: (storeId: string) => void;      // 이슈 → 취소(목록에서 숨김, 이력은 이슈 유지)
   addManualStore: (store: { name: string; address: string; phone: string; items: { name: string; quantity: number }[] }) => void;
@@ -325,6 +326,23 @@ export function DeliveryProvider({ children }: { children: React.ReactNode }) {
     [dateIndex],
   );
 
+  const updateRedeliveryStore = useCallback(
+    (storeId: string, name: string | undefined) => {
+      setCourses((prev) =>
+        prev.map((c, idx) => {
+          if (idx !== dateIndex) return c;
+          return {
+            ...c,
+            stores: c.stores.map((s) =>
+              s.id === storeId ? { ...s, redeliveryStoreName: name } : s,
+            ),
+          };
+        }),
+      );
+    },
+    [dateIndex],
+  );
+
   const updatePickupDriverNote = useCallback(
     (storeId: string, note: string) => {
       setCourses((prev) =>
@@ -509,6 +527,7 @@ export function DeliveryProvider({ children }: { children: React.ReactNode }) {
         updatePickupStatus,
         updatePickupItemQuantity,
         updatePickupDriverNote,
+        updateRedeliveryStore,
         resetIssueStore,
         cancelStore,
         addManualStore,

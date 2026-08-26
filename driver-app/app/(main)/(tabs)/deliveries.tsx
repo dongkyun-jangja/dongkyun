@@ -88,8 +88,13 @@ export default function DeliveriesScreen() {
                     {itemSummary}{moreCount > 0 ? `  +${moreCount}` : ''}
                   </Text>
 
-                  {(hasBlack || hasRfid || hasCold) && (
+                  {(hasBlack || hasRfid || hasCold || store.redeliveryStoreName) && (
                     <View style={styles.chips}>
+                      {store.redeliveryStoreName && (
+                        <View style={styles.chipRedelivery}>
+                          <Text style={styles.chipRedeliveryText}>↔ 이배송({store.redeliveryStoreName})</Text>
+                        </View>
+                      )}
                       {hasBlack && (
                         <View style={styles.chipBlack}>
                           <Text style={styles.chipBlackText}>🖤 블랙</Text>
@@ -174,6 +179,8 @@ const styles = StyleSheet.create({
   itemSummary: { fontSize: 12, color: colors.gray },
 
   chips: { flexDirection: 'row', gap: 6, marginTop: 2 },
+  chipRedelivery: { backgroundColor: '#4A0000', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  chipRedeliveryText: { fontSize: 10, fontWeight: '700', color: '#FF6B6B' },
   chipBlack: { backgroundColor: '#1E1E1E', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
   chipBlackText: { fontSize: 10, fontWeight: '700', color: '#FFD700' },
   chipRfid: { backgroundColor: '#1A3A5C', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },

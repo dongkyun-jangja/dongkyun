@@ -113,6 +113,7 @@ function StorePanel({
   onPickPlacementPhoto,
   onDeletePlacementPhoto,
   onViewPlacementPhoto,
+  onUpdateRedelivery,
 }: {
   store: Store;
   onDelivered: (storeId: string, photos: string[]) => void;
@@ -125,9 +126,12 @@ function StorePanel({
   onPickPlacementPhoto: (storeId: string) => void;
   onDeletePlacementPhoto: (storeId: string) => void;
   onViewPlacementPhoto: () => void;
+  onUpdateRedelivery: (storeId: string, name: string | undefined) => void;
 }) {
   const [pendingPhotos, setPendingPhotos] = useState<string[]>([]);
   const [showPickupWarn, setShowPickupWarn] = useState(false);
+  const [showRedeliveryModal, setShowRedeliveryModal] = useState(false);
+  const [redeliveryDraft, setRedeliveryDraft] = useState('');
   const prevStoreId = useRef(store.id);
 
   const totalBags = store.items.reduce((s, i) => s + (i.bags ?? 0), 0);
@@ -213,6 +217,37 @@ function StorePanel({
             >
               <Text style={styles.callBtnText}>전화</Text>
             </Pressable>
+          </View>
+          <View style={styles.infoDivider} />
+          {/* 이배송 매장 */}
+          <View style={styles.infoRow}>
+            <Ionicons name="swap-horizontal-outline" size={15} color={store.redeliveryStoreName ? colors.red : colors.gray} />
+            {store.redeliveryStoreName ? (
+              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={[styles.infoText, { color: colors.gray, textDecorationLine: 'line-through' }]} numberOfLines={1}>{store.name}</Text>
+                <Ionicons name="arrow-forward" size={12} color={colors.red} />
+                <Text style={[styles.infoText, { color: colors.red, fontWeight: '700', flex: 1 }]} numberOfLines={1}>{store.redeliveryStoreName}</Text>
+              </View>
+            ) : (
+              <Text style={[styles.infoText, { flex: 1, color: colors.gray }]}>이배송 매장</Text>
+            )}
+            <View style={{ flexDirection: 'row', gap: 4 }}>
+              {store.redeliveryStoreName ? (
+                <>
+                  <Pressable style={styles.placementEditBtn} onPress={() => { setRedeliveryDraft(store.redeliveryStoreName ?? ''); setShowRedeliveryModal(true); }}>
+                    <Ionicons name="pencil-outline" size={13} color={colors.gray} />
+                  </Pressable>
+                  <Pressable style={styles.placementEditBtn} onPress={() => onUpdateRedelivery(store.id, undefined)}>
+                    <Ionicons name="trash-outline" size={13} color={colors.red} />
+                  </Pressable>
+                </>
+              ) : (
+                <Pressable style={styles.placementAddBtn} onPress={() => { setRedeliveryDraft(''); setShowRedeliveryModal(true); }}>
+                  <Ionicons name="add-outline" size={13} color={colors.gray} />
+                  <Text style={styles.placementAddBtnText}>입력</Text>
+                </Pressable>
+              )}
+            </View>
           </View>
           <View style={styles.infoDivider} />
           {/* 상품 놓는 위치 */}
@@ -473,6 +508,50 @@ function StorePanel({
         </View>
       )}
 
+      {/* 이배송 매장 입력 모달 */}
+      {showRedeliveryModal && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setShowRedeliveryModal(false)}>
+          <Pressable style={styles.overlay} onPress={() => setShowRedeliveryModal(false)}>
+            <Pressable style={styles.confirmModal} onPress={(e) => e.stopPropagation()}>
+              <Ionicons name="swap-horizontal-outline" size={36} color={colors.red} />
+              <Text style={styles.confirmTitle}>이배송 매장</Text>
+              <Text style={styles.confirmDesc}>실제로 배송한 매장명을 입력해 주세요.{'\n'}전표 수정 시 참고됩니다.</Text>
+              <TextInput
+                style={styles.redeliveryInput}
+                value={redeliveryDraft}
+                onChangeText={setRedeliveryDraft}
+                placeholder="예) 홍대 A매장"
+                placeholderTextColor={colors.gray}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={() => {
+                  if (redeliveryDraft.trim()) {
+                    onUpdateRedelivery(store.id, redeliveryDraft.trim());
+                  }
+                  setShowRedeliveryModal(false);
+                }}
+              />
+              <View style={{ flexDirection: 'row', gap: 8, width: '100%' }}>
+                <Pressable style={[styles.confirmBtn, { flex: 1, backgroundColor: colors.border }]} onPress={() => setShowRedeliveryModal(false)}>
+                  <Text style={[styles.confirmBtnText, { color: colors.black }]}>취소</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.confirmBtn, { flex: 1, opacity: redeliveryDraft.trim() ? 1 : 0.4 }]}
+                  onPress={() => {
+                    if (redeliveryDraft.trim()) {
+                      onUpdateRedelivery(store.id, redeliveryDraft.trim());
+                    }
+                    setShowRedeliveryModal(false);
+                  }}
+                >
+                  <Text style={styles.confirmBtnText}>확인</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
+
       {/* 회수 상품 경고 모달 */}
       {showPickupWarn && (
         <Modal visible transparent animationType="fade" onRequestClose={() => setShowPickupWarn(false)}>
@@ -495,7 +574,7 @@ function StorePanel({
 // ─── 메인 화면 ───────────────────────────────────────────────────────────
 export default function SplitDeliveryScreen() {
   const { storeId } = useLocalSearchParams<{ storeId?: string }>();
-  const { course, updateStoreStatus, addStorePhoto, resetIssueStore, cancelStore, addManualStore } = useDelivery();
+  const { course, updateStoreStatus, addStorePhoto, resetIssueStore, cancelStore, addManualStore, updateRedeliveryStore } = useDelivery();
   const { addCancelLog } = useCancelLog();
   const { openChat: openKakaoChat } = useKakaoChat();
   const router = useRouter();
@@ -961,6 +1040,7 @@ export default function SplitDeliveryScreen() {
             { text: '삭제', style: 'destructive', onPress: () => deletePlacementPhoto(id) },
           ])}
           onViewPlacementPhoto={() => setShowPlacementModal(true)}
+          onUpdateRedelivery={updateRedeliveryStore}
         />
       </View>
 
@@ -1442,6 +1522,18 @@ const styles = StyleSheet.create({
   confirmBtnText:{ color: colors.white, fontSize: 15, fontWeight: '700' },
   confirmCancelBtn:{ paddingVertical: 8 },
   confirmCancelText:{ fontSize: 13, color: colors.gray },
+  redeliveryInput: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: colors.black,
+    marginTop: 8,
+    marginBottom: 4,
+  },
 
   donePopupOverlay: {
     position: 'absolute',
