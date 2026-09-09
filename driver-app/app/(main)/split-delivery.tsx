@@ -11,6 +11,7 @@ import {
   Image,
   Linking,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StatusBar,
@@ -609,20 +610,25 @@ export default function SplitDeliveryScreen() {
   }, []);
 
   const handlePickPlacementPhoto = useCallback(async (storeId: string) => {
+    if (Platform.OS === 'web') {
+      const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.7, base64: false, mediaTypes: ['images'] });
+      if (!result.canceled && result.assets[0]) await savePlacementPhoto(storeId, result.assets[0].uri);
+      return;
+    }
     Alert.alert('상품 놓는 위치 사진', '사진을 선택하세요', [
       {
         text: '카메라로 촬영',
         onPress: async () => {
           const { status } = await ImagePicker.requestCameraPermissionsAsync();
           if (status !== 'granted') { Alert.alert('카메라 권한이 필요합니다'); return; }
-          const result = await ImagePicker.launchCameraAsync({ quality: 0.7, base64: false });
+          const result = await ImagePicker.launchCameraAsync({ quality: 0.7, base64: false, mediaTypes: ['images'] });
           if (!result.canceled && result.assets[0]) await savePlacementPhoto(storeId, result.assets[0].uri);
         },
       },
       {
         text: '갤러리에서 선택',
         onPress: async () => {
-          const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.7, base64: false, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+          const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.7, base64: false, mediaTypes: ['images'] });
           if (!result.canceled && result.assets[0]) await savePlacementPhoto(storeId, result.assets[0].uri);
         },
       },
